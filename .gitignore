@@ -1,2 +1,43 @@
-.pio
-.vscode
+# Build artifacts
+.pio/
+build/
+dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files (contain sensitive information)
+.env
+.env.local
+.env.production
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+
+# Python cache (if using any Python tools)
+__pycache__/
+*.pyc
+*.pyo
+
+# Node modules (if using any Node.js tools)
+node_modules/
+
+# Personal configuration overrides
+*_local.h
+*_private.h
