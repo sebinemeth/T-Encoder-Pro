@@ -39,6 +39,7 @@ const unsigned long toggleProcessInterval = 100;
 lv_obj_t *main_screen;
 lv_obj_t *switch_widget;
 lv_obj_t *title_label;
+lv_obj_t *icon_label;
 lv_obj_t *status_label;
 lv_obj_t *update_label;
 lv_obj_t *entity_indicator;
@@ -55,6 +56,7 @@ const unsigned long encoderDebounceTime = 50;
 // Styles
 lv_style_t style_main_bg;
 lv_style_t style_title;
+lv_style_t style_icon;
 lv_style_t style_switch;
 lv_style_t style_switch_knob;
 lv_style_t style_switch_checked;
@@ -65,9 +67,10 @@ void initializeEntities() {
     Serial.println("Initializing entities...");
     for (int i = 0; i < ENTITY_COUNT; i++) {
         Serial.println("Entity " + String(i) + ": " + String(entities[i].name) + " (" + String(entities[i].entity_id) + ")");
-        // Reset state flags
+        // Reset state flags only - preserve pre-defined icons
         entities[i].state = false;
         entities[i].lastState = false;
+        entities[i].iconFetched = false;
     }
     Serial.println("Loaded " + String(ENTITY_COUNT) + " entities from static configuration");
 }
@@ -79,6 +82,23 @@ String getEntityType(String entityId) {
         return entityId.substring(0, dotIndex);
     }
     return "unknown";
+}
+
+// Convert icon name to displayable symbol
+String getDisplaySymbol(String iconName) {
+    // Built-in symbol mapping for common Home Assistant icons
+    if (iconName == "mdi:home-automation") return LV_SYMBOL_HOME;
+    if (iconName == "mdi:toggle-switch") return LV_SYMBOL_SETTINGS;
+    if (iconName == "mdi:light-switch") return LV_SYMBOL_POWER;
+    if (iconName == "mdi:lightbulb") return LV_SYMBOL_EYE_OPEN;
+    if (iconName == "mdi:radiobox-marked") return LV_SYMBOL_BULLET;
+    if (iconName == "mdi:gauge") return LV_SYMBOL_CHARGE;
+    if (iconName == "mdi:fan") return LV_SYMBOL_REFRESH;
+    if (iconName == "mdi:thermostat") return LV_SYMBOL_LOOP;
+    if (iconName == "mdi:help-circle") return LV_SYMBOL_WARNING;
+    
+    // Default fallback symbol
+    return LV_SYMBOL_DUMMY;
 }
 
 // Fetch state for specific entity
@@ -122,6 +142,37 @@ bool fetchEntityState(int entityIndex) {
             entities[entityIndex].state = newState;
             entities[entityIndex].lastState = !newState; // Force UI update
             Serial.println("Entity " + String(entityIndex) + " state changed: " + (newState ? "ON" : "OFF"));
+        }
+        
+        // Set icon if not already processed
+        if (!entities[entityIndex].iconFetched) {
+            // Priority 1: Use user-configured icon from entities.h
+            if (entities[entityIndex].icon.length() > 0) {
+                Serial.println("Entity " + String(entityIndex) + " using user-configured icon: " + entities[entityIndex].icon);
+            } else {
+                // Priority 2: Fallback to domain-based default icon
+                String entityType = getEntityType(entities[entityIndex].entity_id);
+                if (entityType == "input_boolean") {
+                    entities[entityIndex].icon = "mdi:toggle-switch";
+                } else if (entityType == "switch") {
+                    entities[entityIndex].icon = "mdi:light-switch";
+                } else if (entityType == "light") {
+                    entities[entityIndex].icon = "mdi:lightbulb";
+                } else if (entityType == "binary_sensor") {
+                    entities[entityIndex].icon = "mdi:radiobox-marked";
+                } else if (entityType == "sensor") {
+                    entities[entityIndex].icon = "mdi:gauge";
+                } else if (entityType == "fan") {
+                    entities[entityIndex].icon = "mdi:fan";
+                } else if (entityType == "climate") {
+                    entities[entityIndex].icon = "mdi:thermostat";
+                } else {
+                    entities[entityIndex].icon = "mdi:help-circle";
+                }
+                Serial.println("Entity " + String(entityIndex) + " assigned domain-based icon (" + entityType + "): " + entities[entityIndex].icon);
+            }
+            
+            entities[entityIndex].iconFetched = true;
         }
         
         lastError = "";
@@ -347,6 +398,10 @@ void create_styles() {
     lv_style_set_text_color(&style_title, lv_color_white());
     lv_style_set_text_font(&style_title, &lv_font_montserrat_18);
     
+    lv_style_init(&style_icon);
+    lv_style_set_text_color(&style_icon, lv_color_hex(0x4CAF50));
+    lv_style_set_text_font(&style_icon, &lv_font_montserrat_18);
+    
     lv_style_init(&style_switch);
     lv_style_set_bg_color(&style_switch, lv_color_hex(0x3C3C3C));
     lv_style_set_border_color(&style_switch, lv_color_hex(0x666666));
@@ -380,6 +435,11 @@ void create_ui() {
     lv_label_set_text(status_label, "Initializing...");
     lv_obj_add_style(status_label, &style_labels, 0);
     lv_obj_align(status_label, LV_ALIGN_TOP_MID, 0, 50);
+    
+    icon_label = lv_label_create(main_screen);
+    lv_label_set_text(icon_label, LV_SYMBOL_DUMMY);
+    lv_obj_add_style(icon_label, &style_icon, 0);
+    lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -60);
     
     switch_widget = lv_switch_create(main_screen);
     lv_obj_set_size(switch_widget, 120, 60);
@@ -415,6 +475,13 @@ void update_ui() {
     
     // Update entity name
     lv_label_set_text(title_label, current.name.c_str());
+    
+    // Update entity icon - only when entity changes or icon is fetched for the first time
+    if (lastEntityIndex != currentEntityIndex && current.iconFetched) {
+        String symbol = getDisplaySymbol(current.icon);
+        lv_label_set_text(icon_label, symbol.c_str());
+        Serial.println("UI Icon Update: Entity " + String(currentEntityIndex) + " icon symbol: " + symbol);
+    }
     
     // Update switch state - check both state change AND entity change
     if (current.state != current.lastState || lastEntityIndex != currentEntityIndex) {
