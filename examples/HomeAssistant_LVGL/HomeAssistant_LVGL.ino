@@ -25,6 +25,13 @@ lv_obj_t *tiles[ENTITY_COUNT];
 int currentTileIndex = 0;
 int lastTileIndex = -1;
 
+// WiFi overlay and indicator dots
+lv_obj_t *wifi_overlay;
+lv_obj_t *wifi_spinner;
+lv_obj_t *wifi_status_label;
+lv_obj_t *indicator_dots[ENTITY_COUNT];
+lv_obj_t *indicator_container;
+
 // Global connection variables  
 bool connectionEstablished = false;
 String lastError = "";
@@ -72,6 +79,11 @@ bool fetchEntityState(int entityIndex);
 void connectToWiFi();
 String getDisplaySymbol(String iconName);
 void setEntityTypeFromDomain(int entityIndex);
+void createWiFiOverlay();
+void showWiFiOverlay(bool show);
+void updateWiFiOverlayStatus(String status);
+void createIndicatorDots();
+void updateIndicatorDots();
 
 // Initialize entities with proper defaults
 void initializeEntities() {
@@ -212,6 +224,25 @@ void createStyles() {
     lv_style_set_border_width(&style_slider, 2);
 }
 
+// Event handler for tileview tile changes (swipe detection)
+static void tileview_event_handler(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        lv_obj_t * tileview_obj = lv_event_get_target(e);
+        lv_obj_t * active_tile = lv_tileview_get_tile_act(tileview_obj);
+        
+        // Find which tile index is currently active
+        for (int i = 0; i < ENTITY_COUNT; i++) {
+            if (entities[i].tile == active_tile) {
+                currentTileIndex = i;
+                updateIndicatorDots(); // Update dots to show new active tile
+                Serial.println("Tileview: Swiped to tile " + String(currentTileIndex));
+                break;
+            }
+        }
+    }
+}
+
 // Event handlers for different entity types
 static void toggle_event_handler(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
@@ -309,50 +340,69 @@ void createCoverTile(int entityIndex) {
     
     // Position slider
     lv_obj_t* slider = lv_slider_create(tile);
-    lv_obj_set_size(slider, 200, 20);
+    lv_obj_set_size(slider, 250, 25);
     lv_slider_set_range(slider, 0, 100);
-    lv_obj_align(slider, LV_ALIGN_CENTER, 0, -20);
+    lv_slider_set_value(slider, entities[entityIndex].position, LV_ANIM_OFF);
+    lv_obj_align(slider, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_add_style(slider, &style_slider, 0);
     lv_obj_add_event_cb(slider, slider_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
     
-    // Position label
+    // Position percentage label
     lv_obj_t* pos_label = lv_label_create(tile);
-    lv_label_set_text(pos_label, "0%");
+    lv_label_set_text_fmt(pos_label, "%d%%", entities[entityIndex].position);
     lv_obj_add_style(pos_label, &style_value_small, 0);
-    lv_obj_align(pos_label, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_align(pos_label, LV_ALIGN_CENTER, 0, -10);
     
-    // Action buttons
-    lv_obj_t* btn_open = lv_btn_create(tile);
-    lv_obj_set_size(btn_open, 60, 30);
-    lv_obj_align(btn_open, LV_ALIGN_BOTTOM_LEFT, 20, -10);
+    // Create button container for centered layout
+    lv_obj_t* btn_container = lv_obj_create(tile);
+    lv_obj_set_size(btn_container, 200, 50);
+    lv_obj_align(btn_container, LV_ALIGN_CENTER, 0, 35);
+    lv_obj_set_style_bg_opa(btn_container, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(btn_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(btn_container, 0, LV_PART_MAIN);
+    
+    // Open button with up arrow icon
+    lv_obj_t* btn_open = lv_btn_create(btn_container);
+    lv_obj_set_size(btn_open, 50, 40);
+    lv_obj_align(btn_open, LV_ALIGN_LEFT_MID, 10, 0);
     lv_obj_add_style(btn_open, &style_button, 0);
     lv_obj_add_event_cb(btn_open, cover_button_event_handler, LV_EVENT_CLICKED, (void*)(uintptr_t)entityIndex);
     lv_obj_set_user_data(btn_open, (void*)"open");
     
-    lv_obj_t* btn_open_label = lv_label_create(btn_open);
-    lv_label_set_text(btn_open_label, "OPEN");
-    lv_obj_center(btn_open_label);
+    lv_obj_t* btn_open_icon = lv_label_create(btn_open);
+    lv_label_set_text(btn_open_icon, LV_SYMBOL_UP);
+    lv_obj_add_style(btn_open_icon, &style_value_large, 0);
+    lv_obj_center(btn_open_icon);
     
-    lv_obj_t* btn_stop = lv_btn_create(tile);
-    lv_obj_set_size(btn_stop, 60, 30);
-    lv_obj_align(btn_stop, LV_ALIGN_BOTTOM_MID, 0, -10);
+    // Stop button with pause icon
+    lv_obj_t* btn_stop = lv_btn_create(btn_container);
+    lv_obj_set_size(btn_stop, 50, 40);
+    lv_obj_align(btn_stop, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_style(btn_stop, &style_button, 0);
     lv_obj_add_event_cb(btn_stop, cover_button_event_handler, LV_EVENT_CLICKED, (void*)(uintptr_t)entityIndex);
     lv_obj_set_user_data(btn_stop, (void*)"stop");
     
-    lv_obj_t* btn_stop_label = lv_label_create(btn_stop);
-    lv_label_set_text(btn_stop_label, "STOP");
-    lv_obj_center(btn_stop_label);
+    lv_obj_t* btn_stop_icon = lv_label_create(btn_stop);
+    lv_label_set_text(btn_stop_icon, LV_SYMBOL_PAUSE);
+    lv_obj_add_style(btn_stop_icon, &style_value_large, 0);
+    lv_obj_center(btn_stop_icon);
     
-    lv_obj_t* btn_close = lv_btn_create(tile);
-    lv_obj_set_size(btn_close, 60, 30);
-    lv_obj_align(btn_close, LV_ALIGN_BOTTOM_RIGHT, -20, -10);
+    // Close button with down arrow icon
+    lv_obj_t* btn_close = lv_btn_create(btn_container);
+    lv_obj_set_size(btn_close, 50, 40);
+    lv_obj_align(btn_close, LV_ALIGN_RIGHT_MID, -10, 0);
     lv_obj_add_style(btn_close, &style_button, 0);
     lv_obj_add_event_cb(btn_close, cover_button_event_handler, LV_EVENT_CLICKED, (void*)(uintptr_t)entityIndex);
     lv_obj_set_user_data(btn_close, (void*)"close");
     
-    lv_obj_t* btn_close_label = lv_label_create(btn_close);
-    lv_label_set_text(btn_close_label, "CLOSE");
-    lv_obj_center(btn_close_label);
+    lv_obj_t* btn_close_icon = lv_label_create(btn_close);
+    lv_label_set_text(btn_close_icon, LV_SYMBOL_DOWN);
+    lv_obj_add_style(btn_close_icon, &style_value_large, 0);
+    lv_obj_center(btn_close_icon);
+    
+    // Store slider and label references for updates (using a simple container approach)
+    // We'll store the slider as the main user data, and find other elements when updating
+    lv_obj_set_user_data(tile, slider);
 }
 
 // Create UI for thermostat entities
@@ -449,6 +499,107 @@ void createFanTile(int entityIndex) {
     lv_obj_align(speed_label, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
+// Create WiFi connection overlay
+void createWiFiOverlay() {
+    lv_obj_t* main_screen = lv_scr_act();
+    
+    // Create overlay background
+    wifi_overlay = lv_obj_create(main_screen);
+    lv_obj_set_size(wifi_overlay, LV_HOR_RES, LV_VER_RES);
+    lv_obj_align(wifi_overlay, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(wifi_overlay, lv_color_hex(0x000000), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(wifi_overlay, LV_OPA_90, LV_PART_MAIN);
+    lv_obj_set_style_border_width(wifi_overlay, 0, LV_PART_MAIN);
+    
+    // WiFi icon
+    lv_obj_t* wifi_icon = lv_label_create(wifi_overlay);
+    lv_label_set_text(wifi_icon, LV_SYMBOL_WIFI);
+    lv_obj_add_style(wifi_icon, &style_icon, 0);
+    lv_obj_align(wifi_icon, LV_ALIGN_CENTER, 0, -60);
+    
+    // Spinner
+    wifi_spinner = lv_spinner_create(wifi_overlay, 1000, 90);
+    lv_obj_set_size(wifi_spinner, 60, 60);
+    lv_obj_align(wifi_spinner, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_style_arc_color(wifi_spinner, lv_color_hex(0x4CAF50), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(wifi_spinner, lv_color_hex(0x2196F3), LV_PART_INDICATOR);
+    
+    // Status label
+    wifi_status_label = lv_label_create(wifi_overlay);
+    lv_label_set_text(wifi_status_label, "Connecting to WiFi...");
+    lv_obj_add_style(wifi_status_label, &style_value_large, 0);
+    lv_obj_align(wifi_status_label, LV_ALIGN_CENTER, 0, 40);
+    
+    // Initially hide the overlay
+    lv_obj_add_flag(wifi_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Show or hide WiFi overlay
+void showWiFiOverlay(bool show) {
+    if (wifi_overlay) {
+        if (show) {
+            lv_obj_clear_flag(wifi_overlay, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(wifi_overlay, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+// Update WiFi overlay status text
+void updateWiFiOverlayStatus(String status) {
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, status.c_str());
+    }
+}
+
+// Create indicator dots at the bottom of the screen
+void createIndicatorDots() {
+    lv_obj_t* main_screen = lv_scr_act();
+    
+    // Create container for dots
+    indicator_container = lv_obj_create(main_screen);
+    lv_obj_set_size(indicator_container, LV_HOR_RES, 30);
+    lv_obj_align(indicator_container, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_opa(indicator_container, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(indicator_container, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(indicator_container, 0, LV_PART_MAIN);
+    
+    // Calculate dot spacing
+    int dotSize = 8;
+    int dotSpacing = 16;
+    int totalWidth = (ENTITY_COUNT * dotSpacing) - (dotSpacing - dotSize);
+    int startX = (LV_HOR_RES - totalWidth) / 2;
+    
+    // Create individual dots
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        indicator_dots[i] = lv_obj_create(indicator_container);
+        lv_obj_set_size(indicator_dots[i], dotSize, dotSize);
+        lv_obj_set_pos(indicator_dots[i], startX + (i * dotSpacing), 11);
+        lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x666666), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(indicator_dots[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(indicator_dots[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(indicator_dots[i], dotSize / 2, LV_PART_MAIN);
+    }
+    
+    // Set first dot as active
+    updateIndicatorDots();
+}
+
+// Update indicator dots to show current tile
+void updateIndicatorDots() {
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        if (indicator_dots[i]) {
+            if (i == currentTileIndex) {
+                // Active dot - bright green
+                lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x4CAF50), LV_PART_MAIN);
+            } else {
+                // Inactive dot - gray
+                lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x666666), LV_PART_MAIN);
+            }
+        }
+    }
+}
+
 // Create entity tile based on type
 void createEntityTile(int entityIndex) {
     if (entities[entityIndex].tileCreated) return;
@@ -489,17 +640,30 @@ void createUI() {
     
     // Create tileview
     tileview = lv_tileview_create(main_screen);
-    lv_obj_set_size(tileview, LV_HOR_RES, LV_VER_RES);
-    lv_obj_center(tileview);
+    lv_obj_set_size(tileview, LV_HOR_RES, LV_VER_RES - 30); // Leave space for indicator dots
+    lv_obj_align(tileview, LV_ALIGN_TOP_MID, 0, 0);
+    
+    // Hide tileview scrollbar
+    lv_obj_set_style_bg_opa(tileview, LV_OPA_TRANSP, LV_PART_SCROLLBAR);
+    lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
     
     // Set tileview background to black
     lv_obj_set_style_bg_color(tileview, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(tileview, LV_OPA_COVER, LV_PART_MAIN);
     
+    // Register event handler for tileview tile changes (swipe detection)
+    lv_obj_add_event_cb(tileview, tileview_event_handler, LV_EVENT_VALUE_CHANGED, NULL);
+    
     // Create tiles for each entity
     for (int i = 0; i < ENTITY_COUNT; i++) {
         createEntityTile(i);
     }
+    
+    // Create indicator dots
+    createIndicatorDots();
+    
+    // Create WiFi overlay
+    createWiFiOverlay();
     
     // Set initial tile
     lv_obj_set_tile_id(tileview, 0, 0, LV_ANIM_OFF);
@@ -796,8 +960,27 @@ void updateEntityTile(int entityIndex) {
             break;
         }
         case ENTITY_COVER: {
-            // Update position slider and label - simplified for compatibility
+            // Update position slider and label
             if (entity.position != entity.lastPosition) {
+                lv_obj_t* slider = (lv_obj_t*)lv_obj_get_user_data(tile);
+                if (slider) {
+                    // Update slider value without triggering events
+                    lv_slider_set_value(slider, entity.position, LV_ANIM_OFF);
+                    
+                    // Find and update position label (iterate through all children)
+                    uint32_t childCount = lv_obj_get_child_cnt(tile);
+                    for (uint32_t i = 0; i < childCount; i++) {
+                        lv_obj_t* child = lv_obj_get_child(tile, i);
+                        if (child && lv_obj_check_type(child, &lv_label_class)) {
+                            // Check if this label contains percentage text
+                            const char* text = lv_label_get_text(child);
+                            if (text && strstr(text, "%") != NULL) {
+                                lv_label_set_text_fmt(child, "%d%%", entity.position);
+                                break;
+                            }
+                        }
+                    }
+                }
                 Serial.println("Cover position updated to: " + String(entity.position) + "%");
                 entity.lastPosition = entity.position;
             }
@@ -862,6 +1045,7 @@ void handleEncoder() {
             int nextTile = (currentTileIndex + 1) % ENTITY_COUNT;
             lv_obj_set_tile_id(tileview, nextTile, 0, LV_ANIM_ON);
             currentTileIndex = nextTile;
+            updateIndicatorDots(); // Update dots to show new active tile
             encoderCounter = 0;
             navigationCooldown = true;
             lastNavigationTime = millis();
@@ -871,6 +1055,7 @@ void handleEncoder() {
             int prevTile = (currentTileIndex - 1 + ENTITY_COUNT) % ENTITY_COUNT;
             lv_obj_set_tile_id(tileview, prevTile, 0, LV_ANIM_ON);
             currentTileIndex = prevTile;
+            updateIndicatorDots(); // Update dots to show new active tile
             encoderCounter = 0;
             navigationCooldown = true;
             lastNavigationTime = millis();
@@ -944,7 +1129,22 @@ void setup() {
     lv_timer_handler();
     delay(500);
     
+    // Show WiFi overlay while connecting
+    showWiFiOverlay(true);
+    updateWiFiOverlayStatus("Connecting to WiFi...");
+    lv_timer_handler(); // Ensure overlay is drawn
+    
     connectToWiFi();
+    
+    // Hide WiFi overlay after connection attempt
+    if (connectionEstablished) {
+        updateWiFiOverlayStatus("WiFi Connected!");
+        delay(1000); // Show success message briefly
+    } else {
+        updateWiFiOverlayStatus("WiFi Connection Failed");
+        delay(2000); // Show error message longer
+    }
+    showWiFiOverlay(false);
     
     // Initialize WebSocket manager
     if (wsManager.begin()) {

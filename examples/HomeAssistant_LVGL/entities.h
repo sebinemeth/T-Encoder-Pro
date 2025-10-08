@@ -90,5 +90,5 @@ HAEntity entities[ENTITY_COUNT] = {
     {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false},
     {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "mdi:blinds", false, nullptr, false},
     {"Living Room Thermostat", "climate.living_room", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false},
-    {"Temperature Sensor", "sensor.living_room_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false}
+    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false}
 };
