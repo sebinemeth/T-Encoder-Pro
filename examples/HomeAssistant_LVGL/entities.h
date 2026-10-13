@@ -134,7 +134,7 @@ const int ENTITY_COUNT = 4;
 HAEntity entities[ENTITY_COUNT] = {
     // Basic initialization - extended fields are set automatically in initializeEntities()
     {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
-    {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Bedroom Cover", "cover.bedroom_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
     {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
     {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr}
 };
