@@ -394,7 +394,7 @@ private:
         String state = doc["state"] | "";
         Serial.println("[WS] Entity " + entities[entityIndex].name + " (" + entities[entityIndex].entity_id + ") state: " + state);
         
-        // Update entity based on type - similar to fetchEntityState but from WebSocket data
+        // Update entity based on type
         switch (entities[entityIndex].type) {
             case ENTITY_TOGGLE: {
                 bool newState = (state == "on");
@@ -449,31 +449,7 @@ private:
             }
         }
         
-        // Set icon if not already processed
-        if (!entities[entityIndex].iconFetched) {
-            if (entities[entityIndex].icon.length() == 0) {
-                String entityType = getEntityType(entities[entityIndex].entity_id);
-                // Set default icons based on type (same as REST implementation)
-                if (entityType == "input_boolean") {
-                    entities[entityIndex].icon = "mdi:toggle-switch";
-                } else if (entityType == "switch") {
-                    entities[entityIndex].icon = "mdi:light-switch";
-                } else if (entityType == "light") {
-                    entities[entityIndex].icon = "mdi:lightbulb";
-                } else if (entityType == "cover") {
-                    entities[entityIndex].icon = "mdi:window-shutter";
-                } else if (entityType == "climate") {
-                    entities[entityIndex].icon = "mdi:thermostat";
-                } else if (entityType == "sensor") {
-                    entities[entityIndex].icon = "mdi:gauge";
-                } else if (entityType == "fan") {
-                    entities[entityIndex].icon = "mdi:fan";
-                } else {
-                    entities[entityIndex].icon = "mdi:help-circle";
-                }
-            }
-            entities[entityIndex].iconFetched = true;
-        }
+        ensureEntityIcon(entities[entityIndex]);
     }
     
     void getInitialStates() {
@@ -537,15 +513,6 @@ private:
         String message;
         serializeJson(doc, message);
         webSocket.sendTXT(message);
-    }
-    
-    // Helper function to extract entity type from entity_id
-    String getEntityType(String entityId) {
-        int dotIndex = entityId.indexOf('.');
-        if (dotIndex > 0) {
-            return entityId.substring(0, dotIndex);
-        }
-        return "unknown";
     }
     
     // ================ HYBRID MANAGEMENT METHODS ================

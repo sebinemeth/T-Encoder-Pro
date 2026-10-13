@@ -81,7 +81,6 @@ void createEntityTile(int entityIndex);
 void updateEntityTile(int entityIndex);
 void handleEntityAction(int entityIndex, String action, String value = "");
 void processAPIRequest();
-bool fetchEntityState(int entityIndex);
 void connectToWiFi();
 String getDisplaySymbol(String iconName);
 void setEntityTypeFromDomain(int entityIndex);
@@ -140,31 +139,9 @@ void initializeEntities() {
     Serial.println("Loaded " + String(ENTITY_COUNT) + " entities from static configuration");
 }
 
-// Determine entity type and set defaults based on domain
+// Determine entity type from its domain
 void setEntityTypeFromDomain(int entityIndex) {
-    String entityType = getEntityType(entities[entityIndex].entity_id);
-    
-    if (entityType == "cover") {
-        entities[entityIndex].type = ENTITY_COVER;
-    } else if (entityType == "climate") {
-        entities[entityIndex].type = ENTITY_THERMOSTAT;
-    } else if (entityType == "sensor") {
-        entities[entityIndex].type = ENTITY_SENSOR;
-    } else if (entityType == "fan") {
-        entities[entityIndex].type = ENTITY_FAN;
-    } else {
-        // Default to toggle type for lights, switches, input_boolean, etc.
-        entities[entityIndex].type = ENTITY_TOGGLE;
-    }
-}
-
-// Helper function to extract entity type from entity_id
-String getEntityType(String entityId) {
-    int dotIndex = entityId.indexOf('.');
-    if (dotIndex > 0) {
-        return entityId.substring(0, dotIndex);
-    }
-    return "unknown";
+    entities[entityIndex].type = entityTypeForDomain(getEntityType(entities[entityIndex].entity_id));
 }
 
 // Convert icon name to displayable symbol
@@ -790,141 +767,6 @@ void connectToWiFi() {
     } else {
         Serial.println("WiFi connection failed!");
         connectionEstablished = false;
-    }
-}
-
-// Fetch state for specific entity
-bool fetchEntityState(int entityIndex) {
-    if (entityIndex < 0 || entityIndex >= ENTITY_COUNT) return false;
-    if (WiFi.status() != WL_CONNECTED) {
-        lastError = "WiFi Disconnected";
-        connectionEstablished = false;
-        return false;
-    }
-    
-    HTTPClient http;
-    String url = String(HA_URL);
-    if (!url.endsWith("/")) {
-        url += "/";
-    }
-    url += "api/states/" + entities[entityIndex].entity_id;
-    
-    http.begin(url);
-    http.addHeader("Authorization", "Bearer " + String(HA_TOKEN));
-    http.addHeader("Content-Type", "application/json");
-    
-    int httpResponseCode = http.GET();
-    
-    if (httpResponseCode == 200) {
-        String response = http.getString();
-        
-        DynamicJsonDocument doc(2048);
-        DeserializationError error = deserializeJson(doc, response);
-        
-        if (error) {
-            lastError = "JSON Parse Error";
-            http.end();
-            return false;
-        }
-        
-        // Parse entity state based on type
-        String state = doc["state"];
-        
-        switch (entities[entityIndex].type) {
-            case ENTITY_TOGGLE: {
-                bool newState = (state == "on");
-                if (entities[entityIndex].state != newState) {
-                    entities[entityIndex].state = newState;
-                    entities[entityIndex].lastState = !newState;
-                }
-                break;
-            }
-            case ENTITY_COVER: {
-                entities[entityIndex].coverState = state;
-                if (doc["attributes"]["current_position"].is<int>()) {
-                    int newPosition = doc["attributes"]["current_position"];
-                    if (entities[entityIndex].position != newPosition) {
-                        entities[entityIndex].position = newPosition;
-                        entities[entityIndex].lastPosition = -1; // Force UI update
-                    }
-                }
-                break;
-            }
-            case ENTITY_THERMOSTAT: {
-                if (doc["attributes"]["current_temperature"].is<float>()) {
-                    entities[entityIndex].currentTemp = doc["attributes"]["current_temperature"];
-                }
-                if (doc["attributes"]["temperature"].is<float>()) {
-                    float newTarget = doc["attributes"]["temperature"];
-                    if (abs(entities[entityIndex].targetTemp - newTarget) > 0.1) {
-                        entities[entityIndex].targetTemp = newTarget;
-                        entities[entityIndex].lastTargetTemp = -1; // Force UI update
-                    }
-                }
-                // Parse min/max temperature ranges from HA
-                if (doc["attributes"]["min_temp"].is<float>()) {
-                    entities[entityIndex].minTemp = doc["attributes"]["min_temp"];
-                }
-                if (doc["attributes"]["max_temp"].is<float>()) {
-                    entities[entityIndex].maxTemp = doc["attributes"]["max_temp"];
-                }
-                entities[entityIndex].hvacMode = doc["attributes"]["hvac_mode"] | "off";
-                entities[entityIndex].hvacAction = doc["attributes"]["hvac_action"] | "idle";
-                break;
-            }
-            case ENTITY_SENSOR: {
-                entities[entityIndex].sensorValue = state;
-                entities[entityIndex].sensorUnit = doc["attributes"]["unit_of_measurement"] | "";
-                break;
-            }
-            case ENTITY_FAN: {
-                bool fanOn = (state == "on");
-                int newSpeed = 0;
-                if (fanOn && doc["attributes"]["percentage"].is<int>()) {
-                    newSpeed = doc["attributes"]["percentage"];
-                }
-                if (entities[entityIndex].fanSpeed != newSpeed) {
-                    entities[entityIndex].fanSpeed = newSpeed;
-                    entities[entityIndex].lastFanSpeed = -1; // Force UI update
-                }
-                break;
-            }
-        }
-        
-        // Set icon if not already processed
-        if (!entities[entityIndex].iconFetched) {
-            if (entities[entityIndex].icon.length() == 0) {
-                String entityType = getEntityType(entities[entityIndex].entity_id);
-                if (entityType == "input_boolean") {
-                    entities[entityIndex].icon = "mdi:toggle-switch";
-                } else if (entityType == "switch") {
-                    entities[entityIndex].icon = "mdi:light-switch";
-                } else if (entityType == "light") {
-                    entities[entityIndex].icon = "mdi:lightbulb";
-                } else if (entityType == "cover") {
-                    entities[entityIndex].icon = "mdi:window-shutter";
-                } else if (entityType == "climate") {
-                    entities[entityIndex].icon = "mdi:thermostat";
-                } else if (entityType == "sensor") {
-                    entities[entityIndex].icon = "mdi:gauge";
-                } else if (entityType == "fan") {
-                    entities[entityIndex].icon = "mdi:fan";
-                } else {
-                    entities[entityIndex].icon = "mdi:help-circle";
-                }
-            }
-            entities[entityIndex].iconFetched = true;
-        }
-        
-        lastError = "";
-        connectionEstablished = true;
-        http.end();
-        return true;
-    } else {
-        lastError = "HTTP " + String(httpResponseCode);
-        connectionEstablished = false;
-        http.end();
-        return false;
     }
 }
 

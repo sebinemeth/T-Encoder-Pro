@@ -56,6 +56,41 @@ struct HAEntity {
     bool tileCreated;      // Flag to track if tile UI has been created
 };
 
+// ---- Domain helpers (single source of truth for type/icon mapping) ----
+
+// Extract the domain from an entity_id ("light.desk" -> "light")
+inline String getEntityType(const String& entityId) {
+    int dotIndex = entityId.indexOf('.');
+    return dotIndex > 0 ? entityId.substring(0, dotIndex) : String("unknown");
+}
+
+inline EntityType entityTypeForDomain(const String& domain) {
+    if (domain == "cover") return ENTITY_COVER;
+    if (domain == "climate") return ENTITY_THERMOSTAT;
+    if (domain == "sensor") return ENTITY_SENSOR;
+    if (domain == "fan") return ENTITY_FAN;
+    return ENTITY_TOGGLE; // lights, switches, input_boolean, ...
+}
+
+inline const char* defaultIconForDomain(const String& domain) {
+    if (domain == "input_boolean") return "mdi:toggle-switch";
+    if (domain == "switch") return "mdi:light-switch";
+    if (domain == "light") return "mdi:lightbulb";
+    if (domain == "cover") return "mdi:window-shutter";
+    if (domain == "climate") return "mdi:thermostat";
+    if (domain == "sensor") return "mdi:gauge";
+    if (domain == "fan") return "mdi:fan";
+    return "mdi:help-circle";
+}
+
+// Fill in the default icon once, if none was configured
+inline void ensureEntityIcon(HAEntity& e) {
+    if (!e.iconFetched) {
+        if (e.icon.length() == 0) e.icon = defaultIconForDomain(getEntityType(e.entity_id));
+        e.iconFetched = true;
+    }
+}
+
 /*
  * Entity Type Support:
  * - ENTITY_TOGGLE: For lights, switches, input_boolean (uses switch widget)
