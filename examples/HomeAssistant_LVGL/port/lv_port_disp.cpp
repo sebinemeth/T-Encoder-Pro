@@ -12,10 +12,23 @@
 #include "Arduino.h"
 #include "Arduino_GFX_Library.h"
 #include "pin_config.h"
+#include "perf_stats.h"
 
 /*********************
  *      DEFINES
  *********************/
+// QSPI clock for the panel. Arduino_GFX defaults to 8 MHz; 80 MHz verified on the owner's unit; override with -D DISPLAY_BUS_HZ=...
+// Draw buffer height in rows, and whether a second buffer is used. Flushing is synchronous,
+// so a second buffer buys nothing; one larger buffer means fewer full-tree redraw passes.
+#ifndef DISP_BUF_ROWS
+#define DISP_BUF_ROWS 78   /* 5 passes per full frame, 61 KB */
+#endif
+#ifndef DISP_BUF_DOUBLE
+#define DISP_BUF_DOUBLE 0
+#endif
+#ifndef DISPLAY_BUS_HZ
+#define DISPLAY_BUS_HZ 80000000
+#endif
 #define MY_DISP_HOR_RES SCREEN_WIDTH
 #define MY_DISP_VER_RES SCREEN_HEIGHT
 
@@ -60,11 +73,14 @@ void lv_port_disp_init(void)
      * Create a buffer for drawing
      *----------------------------*/
     
-    /* Create double buffer for smooth rendering */
     static lv_disp_draw_buf_t draw_buf_dsc;
-    static lv_color_t buf_1[MY_DISP_HOR_RES * 10];                        /*A buffer for 10 rows*/
-    static lv_color_t buf_2[MY_DISP_HOR_RES * 10];                        /*Another buffer for 10 rows*/
-    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_HOR_RES * 10);   /*Initialize the display buffer*/
+    static lv_color_t buf_1[MY_DISP_HOR_RES * DISP_BUF_ROWS];
+#if DISP_BUF_DOUBLE
+    static lv_color_t buf_2[MY_DISP_HOR_RES * DISP_BUF_ROWS];
+    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, buf_2, MY_DISP_HOR_RES * DISP_BUF_ROWS);
+#else
+    lv_disp_draw_buf_init(&draw_buf_dsc, buf_1, NULL, MY_DISP_HOR_RES * DISP_BUF_ROWS);
+#endif
 
     /*-----------------------------------
      * Register the display in LVGL
@@ -99,7 +115,7 @@ static void disp_init(void)
     digitalWrite(SCREEN_EN, HIGH);
 
     // Initialize display
-    if (!gfx->begin())
+    if (!gfx->begin(DISPLAY_BUS_HZ))
     {
         Serial.println("gfx->begin() failed!");
     }
@@ -128,6 +144,7 @@ void disp_disable_update(void)
 /*Flush the content of the internal buffer the specific area on the display*/
 static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_color_t * color_p)
 {
+    uint32_t t0 = micros();
     if(disp_flush_enabled) {
         uint32_t w = (area->x2 - area->x1 + 1);
         uint32_t h = (area->y2 - area->y1 + 1);
@@ -138,6 +155,8 @@ static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_colo
         gfx->draw16bitRGBBitmap(area->x1, area->y1, (uint16_t *)&color_p->full, w, h);
 #endif
     }
+
+    perfFlush(micros() - t0, (area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1), lv_disp_flush_is_last(disp_drv));
 
     /*IMPORTANT!!!
      *Inform the graphics library that you are ready with the flushing*/

@@ -14,6 +14,7 @@
 #include "port/lv_port_indev.h"
 #include "port/encoder.h"
 #include "port/screenshot.h"
+#include "port/perf_stats.h"
 #include "pin_config.h"
 #include "ha_config.h"
 #if __has_include("ha_config_private.h")
@@ -668,7 +669,10 @@ void setup() {
 }
 
 void loop() {
+    perfLoopTick();
+    uint32_t lvglStart = micros();
     lv_timer_handler();
+    perfLvglTime(micros() - lvglStart);
     
     handleEncoderInput();
     

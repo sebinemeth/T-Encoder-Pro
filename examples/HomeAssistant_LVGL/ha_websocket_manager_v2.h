@@ -39,6 +39,8 @@ private:
     // REST
     HTTPClient httpClient;
     unsigned long lastRestPoll = 0;
+    int fullSyncCursor = -1;       // >= 0 while a full sync runs: one entity per loop() so the UI keeps drawing
+    int fullSyncLoaded = 0;
     static const unsigned long REST_POLL_INTERVAL = 15000; // only while WS is not ready
     bool syncRequested = false;                            // full REST sync pending
     bool refreshEntity[ENTITY_COUNT] = {};                 // per-entity REST refresh pending
@@ -404,6 +406,11 @@ private:
     void handleRest(unsigned long now) {
         if (WiFi.status() != WL_CONNECTED) return;
 
+        if (fullSyncCursor >= 0) {
+            stepFullSync();
+            return;
+        }
+
         if (currentState == WS_STATE_READY) {
             if (syncRequested) {
                 syncRequested = false;
@@ -427,12 +434,19 @@ private:
         }
     }
 
+    // Start a full sync; stepFullSync() then fetches one entity per call
     void fetchAllViaREST() {
-        int loaded = 0;
-        for (int i = 0; i < ENTITY_COUNT; i++) {
-            if (fetchEntityViaREST(i)) loaded++;
+        fullSyncCursor = 0;
+        fullSyncLoaded = 0;
+        stepFullSync();
+    }
+
+    void stepFullSync() {
+        if (fetchEntityViaREST(fullSyncCursor)) fullSyncLoaded++;
+        if (++fullSyncCursor >= ENTITY_COUNT) {
+            fullSyncCursor = -1;
+            Serial.println("[REST] Synced " + String(fullSyncLoaded) + "/" + String(ENTITY_COUNT) + " entities");
         }
-        Serial.println("[REST] Synced " + String(loaded) + "/" + String(ENTITY_COUNT) + " entities");
     }
 
     bool fetchEntityViaREST(int entityIndex) {
@@ -441,8 +455,8 @@ private:
 
         httpClient.begin(baseUrl + "/api/states/" + entities[entityIndex].entity_id);
         httpClient.addHeader("Authorization", "Bearer " + String(HA_TOKEN));
-        httpClient.setTimeout(2000);
-        httpClient.setConnectTimeout(1000);
+        httpClient.setTimeout(1000);        // each request can stall the UI for this long
+        httpClient.setConnectTimeout(500);
 
         int code = httpClient.GET();
         bool ok = false;
