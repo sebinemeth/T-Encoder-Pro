@@ -12,6 +12,7 @@
 #include "lvgl.h"
 #include "port/lv_port_disp.h"
 #include "port/lv_port_indev.h"
+#include "port/encoder.h"
 #include "pin_config.h"
 #include "ha_config.h"
 #if __has_include("ha_config_private.h")
@@ -64,17 +65,19 @@ unsigned long wifiAttemptStart = 0;
 unsigned long wifiOverlayHideAt = 0;
 bool wifiWasConnected = false;
 
-// Input handling
-unsigned long lastEncoderTime = 0;
-const unsigned long encoderDebounceTime = 50;
-bool lastEncoderButtonState = HIGH;
-unsigned long lastEncoderButtonTime = 0;
-const unsigned long encoderButtonDebounceTime = 50;
+// Encoder input: rotation navigates tiles; a short press toggles (switches) or enters
+// edit mode (cover, thermostat, fan), where rotation changes the value. A long press
+// stops a cover. Edit mode ends on press, tile change, or after a period of inactivity.
+bool editMode = false;
+unsigned long editLastActivity = 0;
+const unsigned long editTimeout = 5000;
+const int coverEditStep = 5;     // % per detent
+const int fanEditStep = 10;      // % per detent
 
-// Navigation
-bool navigationCooldown = false;
-unsigned long lastNavigationTime = 0;
-const unsigned long navigationCooldownTime = 300;
+// Tileview scroll animations can emit a stale VALUE_CHANGED; ignore events that
+// disagree with an encoder-initiated move for a short while.
+int programmaticTile = -1;
+unsigned long programmaticUntil = 0;
 
 // Styles
 lv_style_t style_tile_bg;
@@ -101,6 +104,7 @@ void showWiFiOverlay(bool show);
 void updateWiFiOverlayStatus(String status);
 void createIndicatorDots();
 void updateIndicatorDots();
+void exitEditMode();
 
 // Initialize entities with proper defaults
 void initializeEntities() {
@@ -244,9 +248,10 @@ static void tileview_event_handler(lv_event_t * e) {
         // Find which tile index is currently active
         for (int i = 0; i < ENTITY_COUNT; i++) {
             if (entities[i].tile == active_tile) {
+                if (millis() < programmaticUntil && i != programmaticTile) break; // stale event
+                if (i != currentTileIndex) exitEditMode();
                 currentTileIndex = i;
                 updateIndicatorDots(); // Update dots to show new active tile
-                Serial.println("Tileview: Swiped to tile " + String(currentTileIndex));
                 break;
             }
         }
@@ -280,22 +285,50 @@ static void cover_button_event_handler(lv_event_t * e) {
     }
 }
 
+// ---- Value setters shared by touch handlers and the encoder ----
+// fromTouch: the widget was already moved by the user, so don't touch it again.
+
+static void setCoverPosition(int entityIndex, int value, bool fromTouch) {
+    HAEntity& entity = entities[entityIndex];
+    value = constrain(value, 0, 100);
+    entity.position = value;
+    if (!fromTouch && entity.wControl) lv_slider_set_value(entity.wControl, value, LV_ANIM_OFF);
+    if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
+    handleEntityAction(entityIndex, "cover_set_position", String(value), valueCommandDebounce);
+}
+
+static void setFanSpeed(int entityIndex, int value, bool fromTouch) {
+    HAEntity& entity = entities[entityIndex];
+    value = constrain(value, 0, 100);
+    entity.fanSpeed = value;
+    if (!fromTouch && entity.wControl) lv_slider_set_value(entity.wControl, value, LV_ANIM_OFF);
+    if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
+    handleEntityAction(entityIndex, "fan_set_speed", String(value), valueCommandDebounce);
+}
+
+static void setTargetTemp(int entityIndex, float temp) {
+    HAEntity& entity = entities[entityIndex];
+    temp = constrain(roundf(temp / thermostatStep) * thermostatStep, entity.minTemp, entity.maxTemp);
+    entity.targetTemp = temp;
+    if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", temp);
+    float range = entity.maxTemp - entity.minTemp;
+    if (entity.wControl && range > 0) {
+        lv_arc_set_value(entity.wControl, (int)lroundf((temp - entity.minTemp) / range * 100.0f));
+    }
+    handleEntityAction(entityIndex, "set_temperature", String(temp, 1), valueCommandDebounce);
+}
+
 static void slider_event_handler(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
     if (code == LV_EVENT_VALUE_CHANGED) {
         lv_obj_t * obj = lv_event_get_target(e);
         int entityIndex = (int)(uintptr_t)lv_event_get_user_data(e);
         int value = lv_slider_get_value(obj);
-        HAEntity& entity = entities[entityIndex];
         
-        if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
-        
-        if (entity.type == ENTITY_COVER) {
-            entity.position = value;
-            handleEntityAction(entityIndex, "cover_set_position", String(value), valueCommandDebounce);
-        } else if (entity.type == ENTITY_FAN) {
-            entity.fanSpeed = value;
-            handleEntityAction(entityIndex, "fan_set_speed", String(value), valueCommandDebounce);
+        if (entities[entityIndex].type == ENTITY_COVER) {
+            setCoverPosition(entityIndex, value, true);
+        } else if (entities[entityIndex].type == ENTITY_FAN) {
+            setFanSpeed(entityIndex, value, true);
         }
     }
 }
@@ -426,16 +459,9 @@ static void thermostat_arc_event_handler(lv_event_t * e) {
         int entityIndex = (int)(uintptr_t)lv_event_get_user_data(e);
         HAEntity& entity = entities[entityIndex];
         
-        // Convert arc value (0-100) to a temperature in the entity's min/max range, snapped to the step
+        // Convert arc value (0-100) to a temperature in the entity's min/max range
         float tempRange = entity.maxTemp - entity.minTemp;
-        float target_temp = entity.minTemp + (lv_arc_get_value(arc) / 100.0f) * tempRange;
-        target_temp = roundf(target_temp / thermostatStep) * thermostatStep;
-        entity.targetTemp = target_temp;
-        
-        // Update the label immediately for responsiveness
-        if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", target_temp);
-        
-        handleEntityAction(entityIndex, "set_temperature", String(target_temp, 1), valueCommandDebounce);
+        setTargetTemp(entityIndex, entity.minTemp + (lv_arc_get_value(arc) / 100.0f) * tempRange);
     }
 }
 
@@ -993,110 +1019,110 @@ void updateEntityTile(int entityIndex) {
     }
 }
 
-// Handle encoder navigation
-void handleEncoder() {
-    static uint8_t lastEncodeValue = 0;
-    static int8_t encoderCounter = 0;
-    
-    uint8_t encodeValue = 0;
-    
-    // Read encoder pins
-    if (digitalRead(KNOB_DATA_A)) encodeValue |= 0x01;
-    if (digitalRead(KNOB_DATA_B)) encodeValue |= 0x02;
-    
-    // Detect rotation using full step detection
-    if (encodeValue != lastEncodeValue && (millis() - lastEncoderTime > encoderDebounceTime)) {
-        
-        // Clockwise rotation pattern
-        if ((lastEncodeValue == 0x00 && encodeValue == 0x01) ||
-            (lastEncodeValue == 0x01 && encodeValue == 0x03) ||
-            (lastEncodeValue == 0x03 && encodeValue == 0x02) ||
-            (lastEncodeValue == 0x02 && encodeValue == 0x00)) {
-            encoderCounter++;
-        }
-        // Counter-clockwise rotation pattern
-        else if ((lastEncodeValue == 0x00 && encodeValue == 0x02) ||
-                 (lastEncodeValue == 0x02 && encodeValue == 0x03) ||
-                 (lastEncodeValue == 0x03 && encodeValue == 0x01) ||
-                 (lastEncodeValue == 0x01 && encodeValue == 0x00)) {
-            encoderCounter--;
-        }
-        
-        lastEncodeValue = encodeValue;
-        lastEncoderTime = millis();
-        
-        // Check for full detent steps
-        if (encoderCounter >= 2 && !navigationCooldown) {
-            // Next tile
-            int nextTile = (currentTileIndex + 1) % ENTITY_COUNT;
-            lv_obj_set_tile_id(tileview, nextTile, 0, LV_ANIM_ON);
-            currentTileIndex = nextTile;
-            updateIndicatorDots(); // Update dots to show new active tile
-            encoderCounter = 0;
-            navigationCooldown = true;
-            lastNavigationTime = millis();
-            Serial.println("Encoder: Next tile - " + String(currentTileIndex));
-        } else if (encoderCounter <= -2 && !navigationCooldown) {
-            // Previous tile
-            int prevTile = (currentTileIndex - 1 + ENTITY_COUNT) % ENTITY_COUNT;
-            lv_obj_set_tile_id(tileview, prevTile, 0, LV_ANIM_ON);
-            currentTileIndex = prevTile;
-            updateIndicatorDots(); // Update dots to show new active tile
-            encoderCounter = 0;
-            navigationCooldown = true;
-            lastNavigationTime = millis();
-            Serial.println("Encoder: Previous tile - " + String(currentTileIndex));
-        }
+// ---- Encoder input ----
+
+static bool isAdjustable(EntityType type) {
+    return type == ENTITY_COVER || type == ENTITY_THERMOSTAT || type == ENTITY_FAN;
+}
+
+// Outline the control's knob while editing so it is obvious the knob changes the value
+static void setEditHighlight(int entityIndex, bool on) {
+    lv_obj_t* ctrl = entities[entityIndex].wControl;
+    if (!ctrl) return;
+    lv_obj_set_style_outline_width(ctrl, on ? 4 : 0, LV_PART_KNOB);
+    lv_obj_set_style_outline_color(ctrl, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_outline_pad(ctrl, 2, LV_PART_KNOB);
+}
+
+static void enterEditMode() {
+    editMode = true;
+    editLastActivity = millis();
+    setEditHighlight(currentTileIndex, true);
+    Serial.println("Edit mode: " + entities[currentTileIndex].name);
+}
+
+void exitEditMode() {
+    if (!editMode) return;
+    editMode = false;
+    for (int i = 0; i < ENTITY_COUNT; i++) setEditHighlight(i, false);
+    Serial.println("Edit mode off");
+}
+
+static void navigateTiles(int detents) {
+    int target = ((currentTileIndex + detents) % ENTITY_COUNT + ENTITY_COUNT) % ENTITY_COUNT;
+    programmaticTile = target;
+    programmaticUntil = millis() + 500;
+    currentTileIndex = target;
+    lv_obj_set_tile_id(tileview, target, 0, LV_ANIM_ON);
+    updateIndicatorDots();
+}
+
+static void adjustCurrentValue(int detents) {
+    HAEntity& entity = entities[currentTileIndex];
+    switch (entity.type) {
+        case ENTITY_COVER:
+            setCoverPosition(currentTileIndex, entity.position + detents * coverEditStep, false);
+            break;
+        case ENTITY_FAN:
+            setFanSpeed(currentTileIndex, entity.fanSpeed + detents * fanEditStep, false);
+            break;
+        case ENTITY_THERMOSTAT:
+            setTargetTemp(currentTileIndex, entity.targetTemp + detents * thermostatStep);
+            break;
+        default:
+            break;
     }
 }
 
-// Handle encoder button press
-void handleEncoderButton() {
-    bool currentButtonState = digitalRead(KNOB_KEY);
+static void toggleCurrentEntity() {
+    HAEntity& entity = entities[currentTileIndex];
+    entity.state = !entity.state;
+    handleEntityAction(currentTileIndex, "toggle", String(entity.state ? 1 : 0));
+    if (entity.wControl) {
+        if (entity.state) lv_obj_add_state(entity.wControl, LV_STATE_CHECKED);
+        else lv_obj_clear_state(entity.wControl, LV_STATE_CHECKED);
+    }
+}
+
+void handleEncoderInput() {
+    unsigned long now = millis();
     
-    if (currentButtonState == LOW && lastEncoderButtonState == HIGH && 
-        (millis() - lastEncoderButtonTime > encoderButtonDebounceTime)) {
-        
-        Serial.println("Encoder button pressed for entity " + String(currentTileIndex));
-        
-        // Handle button press based on current entity type
-        switch (entities[currentTileIndex].type) {
-            case ENTITY_TOGGLE:
-                // Toggle the switch
-                entities[currentTileIndex].state = !entities[currentTileIndex].state;
-                handleEntityAction(currentTileIndex, "toggle", String(entities[currentTileIndex].state));
-                // Update UI switch state
-                if (entities[currentTileIndex].wControl) {
-                    if (entities[currentTileIndex].state) {
-                        lv_obj_add_state(entities[currentTileIndex].wControl, LV_STATE_CHECKED);
-                    } else {
-                        lv_obj_clear_state(entities[currentTileIndex].wControl, LV_STATE_CHECKED);
-                    }
-                }
-                break;
-            case ENTITY_COVER:
-                // For covers, trigger stop action
-                handleEntityAction(currentTileIndex, "cover_stop");
-                break;
-            default:
-                // For other types, implement specific behavior as needed
-                break;
+    int detents = encoder_take_detents();
+    if (detents != 0) {
+        if (editMode) {
+            adjustCurrentValue(detents);
+            editLastActivity = now;
+        } else {
+            navigateTiles(detents);
         }
-        
-        lastEncoderButtonTime = millis();
     }
     
-    lastEncoderButtonState = currentButtonState;
+    EncoderButtonEvent button = encoder_poll_button();
+    if (button == ENC_BTN_SHORT) {
+        if (editMode) {
+            exitEditMode();
+        } else if (entities[currentTileIndex].type == ENTITY_TOGGLE) {
+            toggleCurrentEntity();
+        } else if (isAdjustable(entities[currentTileIndex].type)) {
+            enterEditMode();
+        }
+    } else if (button == ENC_BTN_LONG) {
+        exitEditMode();
+        if (entities[currentTileIndex].type == ENTITY_COVER) {
+            handleEntityAction(currentTileIndex, "cover_stop");
+        }
+    }
+    
+    if (editMode && now - editLastActivity > editTimeout) {
+        exitEditMode();
+    }
 }
 
 void setup() {
     Serial.begin(115200);
     Serial.println("Multi-Entity LVGL Home Assistant Controller with Tileview Starting...");
     
-    // Initialize encoder pins
-    pinMode(KNOB_DATA_A, INPUT_PULLUP);
-    pinMode(KNOB_DATA_B, INPUT_PULLUP);
-    pinMode(KNOB_KEY, INPUT_PULLUP);
+    encoder_init();
     
     // Initialize entities
     initializeEntities();
@@ -1130,18 +1156,7 @@ void setup() {
 void loop() {
     lv_timer_handler();
     
-    // Handle navigation cooldown
-    if (navigationCooldown && millis() - lastNavigationTime > navigationCooldownTime) {
-        navigationCooldown = false;
-    }
-    
-    // Handle encoder navigation
-    if (!navigationCooldown) {
-        handleEncoder();
-    }
-    
-    // Handle encoder button
-    handleEncoderButton();
+    handleEncoderInput();
     
     // Send queued commands
     processAPIRequest();

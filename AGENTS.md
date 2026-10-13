@@ -47,7 +47,7 @@ History so far: upstream added the CO5300 + CST816 variant, renamed `LCD_*` to `
 
 ## Developing for the encoder
 
-- **Input model**: one encoder path only (LVGL encoder indev with an `lv_group`). Navigation mode rotates between tiles; a button press enters edit mode on the focused tile, rotation changes the value, press confirms. Current values: 50 ms debounce, 300 ms navigation cooldown.
+- **Input model** (`port/encoder.*` + `handleEncoderInput()` in the sketch): one interrupt-driven decoder, one detent per click (clockwise positive). Rotation switches tile. Short press: toggles a light/switch, or enters edit mode on cover, thermostat and fan tiles (knob then changes the value, 5 s idle or another press exits; touching or swiping also exits). Long press (600 ms): stops a cover. Touch works in parallel. There is no LVGL encoder indev or focus group.
 - **Never block `loop()`**: no long `delay`, no blocking WiFi or HTTP. All LVGL calls stay on the main task.
 - **Round display**: keep content inside the inscribed circle; avoid magic pixel offsets.
 - **Memory**: `LV_MEM_SIZE` is 48K; avoid per-message `String` and `DynamicJsonDocument` churn; PSRAM is available.
