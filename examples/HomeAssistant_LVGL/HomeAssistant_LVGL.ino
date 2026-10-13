@@ -309,13 +309,10 @@ static void setFanSpeed(int entityIndex, int value, bool fromTouch) {
 
 static void setTargetTemp(int entityIndex, float temp) {
     HAEntity& entity = entities[entityIndex];
-    temp = constrain(roundf(temp / thermostatStep) * thermostatStep, entity.minTemp, entity.maxTemp);
+    temp = constrain(snapToStep(temp, thermostatStep), entity.minTemp, entity.maxTemp);
     entity.targetTemp = temp;
     if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", temp);
-    float range = entity.maxTemp - entity.minTemp;
-    if (entity.wControl && range > 0) {
-        lv_arc_set_value(entity.wControl, (int)lroundf((temp - entity.minTemp) / range * 100.0f));
-    }
+    if (entity.wControl) lv_arc_set_value(entity.wControl, tempToArcValue(temp, entity.minTemp, entity.maxTemp));
     handleEntityAction(entityIndex, "set_temperature", String(temp, 1), valueCommandDebounce);
 }
 
@@ -484,8 +481,7 @@ static void thermostat_arc_event_handler(lv_event_t * e) {
         HAEntity& entity = entities[entityIndex];
         
         // Convert arc value (0-100) to a temperature in the entity's min/max range
-        float tempRange = entity.maxTemp - entity.minTemp;
-        setTargetTemp(entityIndex, entity.minTemp + (lv_arc_get_value(arc) / 100.0f) * tempRange);
+        setTargetTemp(entityIndex, arcValueToTemp(lv_arc_get_value(arc), entity.minTemp, entity.maxTemp));
     }
 }
 
@@ -846,43 +842,6 @@ void serviceWiFi() {
     }
 }
 
-static ServiceCall buildServiceCall(int entityIndex, const String& action, const String& value) {
-    ServiceCall call;
-    String domain = getEntityType(entities[entityIndex].entity_id);
-    
-    if (action == "toggle") {
-        // Desired state is passed explicitly, so repeating the call is harmless
-        bool on = (value == "1" || value == "true");
-        call.domain = domain;
-        call.service = on ? "turn_on" : "turn_off";
-        call.valid = (domain == "light" || domain == "switch" || domain == "input_boolean");
-    } else if (action == "cover_open" || action == "cover_close" || action == "cover_stop") {
-        call.domain = "cover";
-        call.service = action == "cover_open" ? "open_cover" : (action == "cover_close" ? "close_cover" : "stop_cover");
-        call.valid = true;
-    } else if (action == "cover_set_position") {
-        call.domain = "cover";
-        call.service = "set_cover_position";
-        call.key = "position";
-        call.intValue = value.toInt();
-        call.valid = true;
-    } else if (action == "fan_set_speed") {
-        call.domain = "fan";
-        call.service = "set_percentage";
-        call.key = "percentage";
-        call.intValue = value.toInt();
-        call.valid = true;
-    } else if (action == "set_temperature") {
-        call.domain = "climate";
-        call.service = "set_temperature";
-        call.key = "temperature";
-        call.isFloat = true;
-        call.floatValue = value.toFloat();
-        call.valid = true;
-    }
-    return call;
-}
-
 // REST fallback used when the WebSocket is not ready
 static bool postServiceViaREST(int entityIndex, const ServiceCall& call) {
     String baseUrl = String(HA_URL);
@@ -922,7 +881,7 @@ void processAPIRequest() {
         String action = cmd.action, value = cmd.value;
         cmd.active = false;
         
-        ServiceCall call = buildServiceCall(i, action, value);
+        ServiceCall call = buildServiceCall(entities[i].entity_id.c_str(), action.c_str(), value.c_str());
         if (!call.valid) {
             lastError = "Unsupported action: " + action;
             return;
@@ -934,17 +893,17 @@ void processAPIRequest() {
         
         bool sent;
         if (call.key == nullptr) {
-            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i);
+            sent = wsManager.callService(call.domain, call.service, i);
         } else if (call.isFloat) {
-            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i, call.key, call.floatValue);
+            sent = wsManager.callService(call.domain, call.service, i, call.key, call.floatValue);
         } else {
-            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i, call.key, call.intValue);
+            sent = wsManager.callService(call.domain, call.service, i, call.key, call.intValue);
         }
         
         if (sent) {
-            Serial.println("Sent " + call.domain + "." + call.service + " for " + entities[i].entity_id + " via WebSocket");
+            Serial.println("Sent " + String(call.domain) + "." + call.service + " for " + entities[i].entity_id + " via WebSocket");
         } else if (postServiceViaREST(i, call)) {
-            Serial.println("Sent " + call.domain + "." + call.service + " for " + entities[i].entity_id + " via REST");
+            Serial.println("Sent " + String(call.domain) + "." + call.service + " for " + entities[i].entity_id + " via REST");
         } else {
             lastError = action + " failed";
             // Revert the optimistic toggle so the UI matches HA again
@@ -1017,11 +976,8 @@ void updateEntityTile(int entityIndex) {
                 if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", entity.targetTemp);
                 
                 // Map the target onto the arc using the entity's own min/max range
-                float range = entity.maxTemp - entity.minTemp;
-                if (entity.wControl && range > 0) {
-                    int arc_value = (int)lroundf((entity.targetTemp - entity.minTemp) / range * 100.0f);
-                    arc_value = (arc_value < 0) ? 0 : ((arc_value > 100) ? 100 : arc_value);
-                    lv_arc_set_value(entity.wControl, arc_value);
+                if (entity.wControl) {
+                    lv_arc_set_value(entity.wControl, tempToArcValue(entity.targetTemp, entity.minTemp, entity.maxTemp));
                 }
                 entity.lastTargetTemp = entity.targetTemp;
             }

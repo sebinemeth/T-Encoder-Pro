@@ -6,13 +6,7 @@
  */
 #pragma once
 
-enum EntityType {
-    ENTITY_TOGGLE,      // For lights, switches, input_boolean (uses switch widget)
-    ENTITY_COVER,       // For covers like blinds, shutters (uses position slider and action buttons)
-    ENTITY_THERMOSTAT,  // For climate entities (uses temperature controls)
-    ENTITY_SENSOR,      // For sensors (read-only display)
-    ENTITY_FAN          // For fans (uses speed control)
-};
+#include "app_logic.h"
 
 struct HAEntity {
     String name;           // Display name for the entity
@@ -68,28 +62,13 @@ struct HAEntity {
 
 // Extract the domain from an entity_id ("light.desk" -> "light")
 inline String getEntityType(const String& entityId) {
-    int dotIndex = entityId.indexOf('.');
-    return dotIndex > 0 ? entityId.substring(0, dotIndex) : String("unknown");
+    char domain[24];
+    domainOf(entityId.c_str(), domain, sizeof(domain));
+    return String(domain);
 }
 
-inline EntityType entityTypeForDomain(const String& domain) {
-    if (domain == "cover") return ENTITY_COVER;
-    if (domain == "climate") return ENTITY_THERMOSTAT;
-    if (domain == "sensor") return ENTITY_SENSOR;
-    if (domain == "fan") return ENTITY_FAN;
-    return ENTITY_TOGGLE; // lights, switches, input_boolean, ...
-}
-
-inline const char* defaultIconForDomain(const String& domain) {
-    if (domain == "input_boolean") return "mdi:toggle-switch";
-    if (domain == "switch") return "mdi:light-switch";
-    if (domain == "light") return "mdi:lightbulb";
-    if (domain == "cover") return "mdi:window-shutter";
-    if (domain == "climate") return "mdi:thermostat";
-    if (domain == "sensor") return "mdi:gauge";
-    if (domain == "fan") return "mdi:fan";
-    return "mdi:help-circle";
-}
+inline EntityType entityTypeForDomain(const String& domain) { return entityTypeForDomain(domain.c_str()); }
+inline const char* defaultIconForDomain(const String& domain) { return defaultIconForDomain(domain.c_str()); }
 
 // Fill in the default icon once, if none was configured
 inline void ensureEntityIcon(HAEntity& e) {

@@ -52,4 +52,7 @@ History so far: upstream added the CO5300 + CST816 variant, renamed `LCD_*` to `
 - **Round display**: keep content inside the inscribed circle; avoid magic pixel offsets.
 - **Memory**: `LV_MEM_SIZE` is 48K; avoid per-message `String` and `DynamicJsonDocument` churn; PSRAM is available.
 - **Secrets**: WiFi and HA token go in `ha_config_private.h` (gitignored). Never print the token on Serial.
-- **Build**: `venv/bin/pio run -e HomeAssistant_LVGL` (the env selects the example through `default_envs`). Upload with `-t upload --upload-port /dev/cu.usbmodem*`. The ESP32-S3 appears as "USB JTAG/serial debug unit" (VID 303A).
+- **Build**: `venv/bin/pio run` (single env `HomeAssistant_LVGL`). Upload with `-t upload --upload-port /dev/cu.usbmodem*`. The ESP32-S3 appears as "USB JTAG/serial debug unit" (VID 303A).
+- **Tests**: `pio test -e native` runs host-side Unity tests (`test/test_logic`). Keep logic that can be tested without hardware in the Arduino-free headers `app_logic.h`, `service_call.h` and `port/encoder_decoder.h`, and add tests when changing it.
+- **CI** (`.github/workflows`): `ci.yml` runs the unit tests and builds the firmware on every push and PR (the CI binary has placeholder credentials, build check only). `upstream-check.yml` runs weekly and opens an "Upstream changes to review" issue when LilyGO changes files that matter here (see "Regularly check upstream").
+- **Formatting**: `.clang-format` is provided for new and edited files; it is not enforced and existing files are not reformatted wholesale.
