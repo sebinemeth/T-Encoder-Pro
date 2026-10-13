@@ -54,6 +54,13 @@ struct HAEntity {
     // Tile-specific fields
     lv_obj_t* tile;        // Pointer to the tile object for this entity
     bool tileCreated;      // Flag to track if tile UI has been created
+    
+    // Widget references, set when the tile is created
+    lv_obj_t* wControl;    // switch / slider / arc
+    lv_obj_t* wValue;      // main value label (position, current temp, sensor value, fan speed)
+    lv_obj_t* wTarget;     // thermostat target label
+    lv_obj_t* wStatus;     // status / HVAC label
+    lv_obj_t* wUnit;       // sensor unit label
 };
 
 // ---- Domain helpers (single source of truth for type/icon mapping) ----
@@ -126,8 +133,8 @@ const int ENTITY_COUNT = 4;
 
 HAEntity entities[ENTITY_COUNT] = {
     // Basic initialization - extended fields are set automatically in initializeEntities()
-    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false},
-    {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false},
-    {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false},
-    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false}
+    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr}
 };

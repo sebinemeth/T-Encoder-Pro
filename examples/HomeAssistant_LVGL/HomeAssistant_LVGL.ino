@@ -22,6 +22,7 @@
 #include "ha_websocket_config.h"
 #include "ha_websocket_manager_v2.h"
 #include "entities.h"
+#include "service_call.h"
 
 // Global UI variables
 lv_obj_t *tileview;
@@ -39,19 +40,29 @@ lv_obj_t *indicator_container;
 // Global connection variables  
 bool connectionEstablished = false;
 String lastError = "";
-unsigned long lastWiFiRetry = 0;
 const unsigned long wifiRetryInterval = 30000;
 
 // WebSocket manager
 HAWebSocketManagerV2 wsManager;
 
-// API request management
-bool pendingRequest = false;
-int pendingEntityIndex = -1;
-String pendingRequestType = "";
-String pendingRequestValue = "";
-unsigned long requestStartTime = 0;
-const unsigned long requestProcessInterval = 100;
+// Pending commands: one slot per entity, latest value wins.
+// Slider/arc changes are debounced so only the settled value is sent.
+struct PendingCommand {
+    bool active = false;
+    String action;
+    String value;
+    unsigned long dueAt = 0;
+};
+PendingCommand pendingCommands[ENTITY_COUNT];
+unsigned long lastUserInteraction[ENTITY_COUNT] = {};
+const unsigned long valueCommandDebounce = 250;  // ms after the last slider/arc change
+const unsigned long uiSyncHoldoff = 1500;        // ms: don't overwrite a control the user just touched
+const float thermostatStep = 0.5f;               // arc resolution in degrees
+
+// WiFi state (non-blocking)
+unsigned long wifiAttemptStart = 0;
+unsigned long wifiOverlayHideAt = 0;
+bool wifiWasConnected = false;
 
 // Input handling
 unsigned long lastEncoderTime = 0;
@@ -79,9 +90,10 @@ lv_style_t style_slider;
 // Forward declarations
 void createEntityTile(int entityIndex);
 void updateEntityTile(int entityIndex);
-void handleEntityAction(int entityIndex, String action, String value = "");
+void handleEntityAction(int entityIndex, String action, String value = "", unsigned long debounceMs = 0);
 void processAPIRequest();
-void connectToWiFi();
+void startWiFi();
+void serviceWiFi();
 String getDisplaySymbol(String iconName);
 void setEntityTypeFromDomain(int entityIndex);
 void createWiFiOverlay();
@@ -102,6 +114,7 @@ void initializeEntities() {
         // Initialize all entity fields to defaults
         entities[i].iconFetched = false;
         entities[i].tile = nullptr;
+        entities[i].wControl = entities[i].wValue = entities[i].wTarget = entities[i].wStatus = entities[i].wUnit = nullptr;
         entities[i].tileCreated = false;
         
         // Initialize type-specific fields
@@ -273,14 +286,16 @@ static void slider_event_handler(lv_event_t * e) {
         lv_obj_t * obj = lv_event_get_target(e);
         int entityIndex = (int)(uintptr_t)lv_event_get_user_data(e);
         int value = lv_slider_get_value(obj);
+        HAEntity& entity = entities[entityIndex];
         
-        // Update the entity based on its type
-        if (entities[entityIndex].type == ENTITY_COVER) {
-            entities[entityIndex].position = value;
-            handleEntityAction(entityIndex, "cover_set_position", String(value));
-        } else if (entities[entityIndex].type == ENTITY_FAN) {
-            entities[entityIndex].fanSpeed = value;
-            handleEntityAction(entityIndex, "fan_set_speed", String(value));
+        if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
+        
+        if (entity.type == ENTITY_COVER) {
+            entity.position = value;
+            handleEntityAction(entityIndex, "cover_set_position", String(value), valueCommandDebounce);
+        } else if (entity.type == ENTITY_FAN) {
+            entity.fanSpeed = value;
+            handleEntityAction(entityIndex, "fan_set_speed", String(value), valueCommandDebounce);
         }
     }
 }
@@ -314,8 +329,8 @@ void createToggleTile(int entityIndex) {
     lv_obj_add_style(status, &style_value_small, 0);
     lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -10);
     
-    // Store references for updates
-    lv_obj_set_user_data(tile, sw);
+    entities[entityIndex].wControl = sw;
+    entities[entityIndex].wStatus = status;
 }
 
 // Create UI for cover entities
@@ -399,7 +414,8 @@ void createCoverTile(int entityIndex) {
     
     // Store slider and label references for updates (using a simple container approach)
     // We'll store the slider as the main user data, and find other elements when updating
-    lv_obj_set_user_data(tile, slider);
+    entities[entityIndex].wControl = slider;
+    entities[entityIndex].wValue = pos_label;
 }
 
 // Event handler for thermostat arc
@@ -408,40 +424,18 @@ static void thermostat_arc_event_handler(lv_event_t * e) {
     if (code == LV_EVENT_VALUE_CHANGED) {
         lv_obj_t * arc = lv_event_get_target(e);
         int entityIndex = (int)(uintptr_t)lv_event_get_user_data(e);
-        int arc_value = lv_arc_get_value(arc);
+        HAEntity& entity = entities[entityIndex];
         
-        // Convert arc value (0-100) to temperature using entity's dynamic min/max range
-        float tempRange = entities[entityIndex].maxTemp - entities[entityIndex].minTemp;
-        float target_temp = entities[entityIndex].minTemp + (arc_value / 100.0) * tempRange;
-        entities[entityIndex].targetTemp = target_temp;
+        // Convert arc value (0-100) to a temperature in the entity's min/max range, snapped to the step
+        float tempRange = entity.maxTemp - entity.minTemp;
+        float target_temp = entity.minTemp + (lv_arc_get_value(arc) / 100.0f) * tempRange;
+        target_temp = roundf(target_temp / thermostatStep) * thermostatStep;
+        entity.targetTemp = target_temp;
         
-        Serial.println("Thermostat target temp changed to: " + String(target_temp, 1) + "°C (range: " + 
-                      String(entities[entityIndex].minTemp, 1) + "-" + String(entities[entityIndex].maxTemp, 1) + "°C)");
+        // Update the label immediately for responsiveness
+        if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", target_temp);
         
-        // Update target temperature display immediately for responsiveness
-        lv_obj_t* tile = entities[entityIndex].tile;
-        if (tile) {
-            // Find target temp label (3rd label after title, current temp)
-            uint32_t childCount = lv_obj_get_child_cnt(tile);
-            int labelCount = 0;
-            for (uint32_t i = 0; i < childCount; i++) {
-                lv_obj_t* child = lv_obj_get_child(tile, i);
-                if (child && lv_obj_check_type(child, &lv_label_class)) {
-                    labelCount++;
-                    if (labelCount == 1) { // Title - skip
-                        continue;
-                    } else if (labelCount == 2) { // Current temp - skip
-                        continue;
-                    } else if (labelCount == 3) { // Target temp label
-                        lv_label_set_text_fmt(child, "%.1f°C", target_temp);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // Send temperature change to Home Assistant
-        handleEntityAction(entityIndex, "set_temperature", String(target_temp, 1));
+        handleEntityAction(entityIndex, "set_temperature", String(target_temp, 1), valueCommandDebounce);
     }
 }
 
@@ -495,8 +489,10 @@ void createThermostatTile(int entityIndex) {
     lv_obj_add_style(status, &style_value_small, 0);
     lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -10);
     
-    // Store arc reference for updates
-    lv_obj_set_user_data(tile, temp_arc);
+    entities[entityIndex].wControl = temp_arc;
+    entities[entityIndex].wValue = current_temp;
+    entities[entityIndex].wTarget = target_temp;
+    entities[entityIndex].wStatus = status;
 }
 
 // Create UI for sensor entities
@@ -528,8 +524,8 @@ void createSensorTile(int entityIndex) {
     lv_obj_add_style(unitLabel, &style_sensor_unit, 0);
     lv_obj_align_to(unitLabel, valueLabel, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
     
-    // Store value label reference for updates (unit will be found by position)
-    lv_obj_set_user_data(tile, valueLabel);
+    entities[entityIndex].wValue = valueLabel;
+    entities[entityIndex].wUnit = unitLabel;
 }
 
 // Create UI for fan entities
@@ -552,14 +548,18 @@ void createFanTile(int entityIndex) {
     lv_obj_t* speed_slider = lv_slider_create(tile);
     lv_obj_set_size(speed_slider, 200, 20);
     lv_slider_set_range(speed_slider, 0, 100);
+    lv_slider_set_value(speed_slider, entities[entityIndex].fanSpeed, LV_ANIM_OFF);
     lv_obj_align(speed_slider, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_event_cb(speed_slider, slider_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
     
     // Speed label
     lv_obj_t* speed_label = lv_label_create(tile);
-    lv_label_set_text(speed_label, "0%");
+    lv_label_set_text_fmt(speed_label, "%d%%", entities[entityIndex].fanSpeed);
     lv_obj_add_style(speed_label, &style_value_small, 0);
     lv_obj_align(speed_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    
+    entities[entityIndex].wControl = speed_slider;
+    entities[entityIndex].wValue = speed_label;
 }
 
 // Create WiFi connection overlay
@@ -732,145 +732,185 @@ void createUI() {
     lv_obj_set_tile_id(tileview, 0, 0, LV_ANIM_OFF);
 }
 
-// Handle entity actions (toggle, cover, etc.)
-void handleEntityAction(int entityIndex, String action, String value) {
-    if (!connectionEstablished || pendingRequest) return;
+// Queue an action for an entity. One slot per entity, the latest action wins.
+// debounceMs delays sending so rapid slider/arc changes collapse into the final value.
+void handleEntityAction(int entityIndex, String action, String value, unsigned long debounceMs) {
+    if (entityIndex < 0 || entityIndex >= ENTITY_COUNT) return;
     
-    pendingRequest = true;
-    pendingEntityIndex = entityIndex;
-    pendingRequestType = action;
-    pendingRequestValue = value;
-    requestStartTime = millis();
-    
-    Serial.println("Action queued for entity " + String(entityIndex) + ": " + action + " = " + value);
+    unsigned long now = millis();
+    PendingCommand& cmd = pendingCommands[entityIndex];
+    cmd.active = true;
+    cmd.action = action;
+    cmd.value = value;
+    cmd.dueAt = now + debounceMs;
+    lastUserInteraction[entityIndex] = now;
 }
 
-// WiFi connection function
-void connectToWiFi() {
+// Begin connecting to WiFi without blocking; serviceWiFi() tracks progress
+void startWiFi() {
     Serial.println("Connecting to WiFi...");
-    
+    WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-        delay(1000);
-        Serial.print(".");
-        attempts++;
-    }
+    wifiAttemptStart = millis();
+    showWiFiOverlay(true);
+    updateWiFiOverlayStatus("Connecting to WiFi...");
+}
+
+// Track WiFi state from loop(): overlay, reconnect attempts
+void serviceWiFi() {
+    unsigned long now = millis();
     
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println();
-        Serial.println("WiFi connected!");
-        Serial.print("IP address: ");
-        Serial.println(WiFi.localIP());
-        connectionEstablished = true;
-    } else {
-        Serial.println("WiFi connection failed!");
+        if (!wifiWasConnected) {
+            wifiWasConnected = true;
+            connectionEstablished = true;
+            Serial.print("WiFi connected, IP address: ");
+            Serial.println(WiFi.localIP());
+            updateWiFiOverlayStatus("WiFi Connected!");
+            wifiOverlayHideAt = now + 1000;
+        }
+        if (wifiOverlayHideAt && now >= wifiOverlayHideAt) {
+            wifiOverlayHideAt = 0;
+            showWiFiOverlay(false);
+        }
+        return;
+    }
+    
+    if (wifiWasConnected) {
+        wifiWasConnected = false;
         connectionEstablished = false;
+        wifiOverlayHideAt = 0;
+        Serial.println("WiFi connection lost!");
+        showWiFiOverlay(true);
+        updateWiFiOverlayStatus("WiFi lost, reconnecting...");
+        wifiAttemptStart = now;
+    }
+    
+    if (now - wifiAttemptStart > wifiRetryInterval) {
+        Serial.println("Retrying WiFi connection...");
+        WiFi.disconnect();
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        wifiAttemptStart = now;
+        updateWiFiOverlayStatus("Retrying WiFi...");
     }
 }
 
-// Process API requests
-void processAPIRequest() {
-    if (!pendingRequest || WiFi.status() != WL_CONNECTED || pendingEntityIndex < 0) {
-        return;
+static ServiceCall buildServiceCall(int entityIndex, const String& action, const String& value) {
+    ServiceCall call;
+    String domain = getEntityType(entities[entityIndex].entity_id);
+    
+    if (action == "toggle") {
+        // Desired state is passed explicitly, so repeating the call is harmless
+        bool on = (value == "1" || value == "true");
+        call.domain = domain;
+        call.service = on ? "turn_on" : "turn_off";
+        call.valid = (domain == "light" || domain == "switch" || domain == "input_boolean");
+    } else if (action == "cover_open" || action == "cover_close" || action == "cover_stop") {
+        call.domain = "cover";
+        call.service = action == "cover_open" ? "open_cover" : (action == "cover_close" ? "close_cover" : "stop_cover");
+        call.valid = true;
+    } else if (action == "cover_set_position") {
+        call.domain = "cover";
+        call.service = "set_cover_position";
+        call.key = "position";
+        call.intValue = value.toInt();
+        call.valid = true;
+    } else if (action == "fan_set_speed") {
+        call.domain = "fan";
+        call.service = "set_percentage";
+        call.key = "percentage";
+        call.intValue = value.toInt();
+        call.valid = true;
+    } else if (action == "set_temperature") {
+        call.domain = "climate";
+        call.service = "set_temperature";
+        call.key = "temperature";
+        call.isFloat = true;
+        call.floatValue = value.toFloat();
+        call.valid = true;
     }
+    return call;
+}
+
+// REST fallback used when the WebSocket is not ready
+static bool postServiceViaREST(int entityIndex, const ServiceCall& call) {
+    String baseUrl = String(HA_URL);
+    if (baseUrl.endsWith("/")) baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
     
     HTTPClient http;
-    String entityType = getEntityType(entities[pendingEntityIndex].entity_id);
-    String service;
-    String serviceUrl;
-    String domain;
-    
-    // Determine service and URL based on request type
-    if (pendingRequestType == "toggle") {
-        if (entityType == "input_boolean") {
-            domain = "input_boolean";
-            service = "toggle";
-        } else if (entityType == "switch") {
-            domain = "switch";
-            service = (pendingRequestValue == "1" || pendingRequestValue == "true") ? "turn_on" : "turn_off";
-        } else if (entityType == "light") {
-            domain = "light";
-            service = (pendingRequestValue == "1" || pendingRequestValue == "true") ? "turn_on" : "turn_off";
-        } else {
-            lastError = "Unsupported toggle entity: " + entityType;
-            pendingRequest = false;
-            return;
-        }
-        serviceUrl = String(HA_URL) + "api/services/" + domain + "/" + service;
-    } else if (pendingRequestType.startsWith("cover_")) {
-        domain = "cover";
-        if (pendingRequestType == "cover_open") {
-            service = "open_cover";
-        } else if (pendingRequestType == "cover_close") {
-            service = "close_cover";
-        } else if (pendingRequestType == "cover_stop") {
-            service = "stop_cover";
-        } else if (pendingRequestType == "cover_set_position") {
-            service = "set_cover_position";
-        }
-        serviceUrl = String(HA_URL) + "api/services/cover/" + service;
-    } else if (pendingRequestType.startsWith("fan_")) {
-        domain = "fan";
-        if (pendingRequestType == "fan_set_speed") {
-            service = "set_percentage";
-        }
-        serviceUrl = String(HA_URL) + "api/services/fan/" + service;
-    } else if (pendingRequestType == "set_temperature") {
-        domain = "climate";
-        service = "set_temperature";
-        serviceUrl = String(HA_URL) + "api/services/climate/" + service;
-    } else {
-        lastError = "Unknown request type: " + pendingRequestType;
-        pendingRequest = false;
-        return;
-    }
-    
-    http.begin(serviceUrl);
+    http.begin(baseUrl + "/api/services/" + call.domain + "/" + call.service);
     http.addHeader("Authorization", "Bearer " + String(HA_TOKEN));
     http.addHeader("Content-Type", "application/json");
-    http.setTimeout(1000);
-    http.setConnectTimeout(500);
+    http.setTimeout(2000);
+    http.setConnectTimeout(1000);
     
     DynamicJsonDocument doc(256);
-    doc["entity_id"] = entities[pendingEntityIndex].entity_id;
-    
-    // Add additional parameters based on request type
-    if (pendingRequestType == "cover_set_position") {
-        doc["position"] = pendingRequestValue.toInt();
-    } else if (pendingRequestType == "fan_set_speed") {
-        doc["percentage"] = pendingRequestValue.toInt();
-    } else if (pendingRequestType == "set_temperature") {
-        doc["temperature"] = pendingRequestValue.toFloat();
+    doc["entity_id"] = entities[entityIndex].entity_id;
+    if (call.key) {
+        if (call.isFloat) doc[call.key] = call.floatValue;
+        else doc[call.key] = call.intValue;
     }
+    String body;
+    serializeJson(doc, body);
     
-    String jsonString;
-    serializeJson(doc, jsonString);
-    
-    unsigned long startTime = millis();
-    int httpResponseCode = http.POST(jsonString);
-    unsigned long elapsed = millis() - startTime;
-    
-    Serial.println("API call (" + pendingRequestType + ") took: " + String(elapsed) + "ms");
-    
-    if (httpResponseCode == 200) {
-        Serial.println("API call successful: " + pendingRequestType);
-        lastError = "";
-    } else {
-        lastError = pendingRequestType + " failed: " + String(httpResponseCode);
-        Serial.println("API call failed: " + String(httpResponseCode));
-        
-        // Revert optimistic UI changes on failure
-        if (pendingRequestType == "toggle") {
-            entities[pendingEntityIndex].state = !entities[pendingEntityIndex].state;
-            entities[pendingEntityIndex].lastState = !entities[pendingEntityIndex].state;
-        }
-    }
-    
+    int code = http.POST(body);
     http.end();
-    pendingRequest = false;
-    pendingEntityIndex = -1;
+    if (code != 200) Serial.println("REST service call failed: HTTP " + String(code));
+    return code == 200;
+}
+
+// Send at most one due command per call. Prefers the WebSocket, falls back to REST.
+void processAPIRequest() {
+    unsigned long now = millis();
+    
+    for (int i = 0; i < ENTITY_COUNT; i++) {
+        PendingCommand& cmd = pendingCommands[i];
+        if (!cmd.active || now < cmd.dueAt) continue;
+        
+        // Free the slot first: changes made while sending queue up as a new command
+        String action = cmd.action, value = cmd.value;
+        cmd.active = false;
+        
+        ServiceCall call = buildServiceCall(i, action, value);
+        if (!call.valid) {
+            lastError = "Unsupported action: " + action;
+            return;
+        }
+        if (WiFi.status() != WL_CONNECTED) {
+            lastError = "WiFi disconnected";
+            return;
+        }
+        
+        bool sent;
+        if (call.key == nullptr) {
+            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i);
+        } else if (call.isFloat) {
+            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i, call.key, call.floatValue);
+        } else {
+            sent = wsManager.callService(call.domain.c_str(), call.service.c_str(), i, call.key, call.intValue);
+        }
+        
+        if (sent) {
+            Serial.println("Sent " + call.domain + "." + call.service + " for " + entities[i].entity_id + " via WebSocket");
+        } else if (postServiceViaREST(i, call)) {
+            Serial.println("Sent " + call.domain + "." + call.service + " for " + entities[i].entity_id + " via REST");
+        } else {
+            lastError = action + " failed";
+            // Revert the optimistic toggle so the UI matches HA again
+            if (action == "toggle") {
+                entities[i].state = !entities[i].state;
+                entities[i].lastState = !entities[i].state;
+            }
+        }
+        return;
+    }
+}
+
+// True while the user is interacting with an entity's control; incoming HA values
+// are held back from the widget so they don't fight the drag (applied afterwards).
+static bool userHoldsControl(int entityIndex) {
+    return millis() - lastUserInteraction[entityIndex] < uiSyncHoldoff;
 }
 
 // Update UI elements for specific entity
@@ -880,174 +920,72 @@ void updateEntityTile(int entityIndex) {
     }
     
     HAEntity &entity = entities[entityIndex];
-    lv_obj_t* tile = entity.tile;
-    
-    if (!tile) return;
+    if (!entity.tile) return;
     
     switch (entity.type) {
         case ENTITY_TOGGLE: {
-            // Update switch state
-            if (entity.state != entity.lastState) {
-                lv_obj_t* sw = (lv_obj_t*)lv_obj_get_user_data(tile);
-                if (sw) {
-                    if (entity.state) {
-                        lv_obj_add_state(sw, LV_STATE_CHECKED);
-                    } else {
-                        lv_obj_clear_state(sw, LV_STATE_CHECKED);
-                    }
+            if (entity.state != entity.lastState && !userHoldsControl(entityIndex)) {
+                if (entity.wControl) {
+                    if (entity.state) lv_obj_add_state(entity.wControl, LV_STATE_CHECKED);
+                    else lv_obj_clear_state(entity.wControl, LV_STATE_CHECKED);
                 }
                 entity.lastState = entity.state;
             }
             break;
         }
         case ENTITY_COVER: {
-            // Update position slider and label
-            if (entity.position != entity.lastPosition) {
-                lv_obj_t* slider = (lv_obj_t*)lv_obj_get_user_data(tile);
-                if (slider) {
-                    // Update slider value without triggering events
-                    lv_slider_set_value(slider, entity.position, LV_ANIM_OFF);
-                    
-                    // Find and update position label (iterate through all children)
-                    uint32_t childCount = lv_obj_get_child_cnt(tile);
-                    for (uint32_t i = 0; i < childCount; i++) {
-                        lv_obj_t* child = lv_obj_get_child(tile, i);
-                        if (child && lv_obj_check_type(child, &lv_label_class)) {
-                            // Check if this label contains percentage text
-                            const char* text = lv_label_get_text(child);
-                            if (text && strstr(text, "%") != NULL) {
-                                lv_label_set_text_fmt(child, "%d%%", entity.position);
-                                break;
-                            }
-                        }
-                    }
-                }
-                Serial.println("Cover position updated to: " + String(entity.position) + "%");
+            if (entity.position != entity.lastPosition && !userHoldsControl(entityIndex)) {
+                if (entity.wControl) lv_slider_set_value(entity.wControl, entity.position, LV_ANIM_OFF);
+                if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", entity.position);
                 entity.lastPosition = entity.position;
             }
             break;
         }
         case ENTITY_THERMOSTAT: {
-            // Update current temperature display
-            if (abs(entity.currentTemp - entity.lastCurrentTemp) > 0.1) {
-                Serial.println("Thermostat current temp updated to: " + String(entity.currentTemp, 1) + "°C");
-                
-                // Find and update current temp label (1st label after title)
-                uint32_t childCount = lv_obj_get_child_cnt(tile);
-                int labelCount = 0;
-                for (uint32_t i = 0; i < childCount; i++) {
-                    lv_obj_t* child = lv_obj_get_child(tile, i);
-                    if (child && lv_obj_check_type(child, &lv_label_class)) {
-                        labelCount++;
-                        if (labelCount == 1) { // Title - skip
-                            continue;
-                        } else if (labelCount == 2) { // Current temp label
-                            lv_label_set_text_fmt(child, "%.1f°C", entity.currentTemp);
-                            break;
-                        }
-                    }
-                }
+            if (fabsf(entity.currentTemp - entity.lastCurrentTemp) > 0.05f) {
+                if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%.1f°C", entity.currentTemp);
                 entity.lastCurrentTemp = entity.currentTemp;
             }
             
-            // Update target temperature display and arc position
-            if (abs(entity.targetTemp - entity.lastTargetTemp) > 0.1) {
-                Serial.println("Thermostat target temp updated to: " + String(entity.targetTemp, 1) + "°C");
+            if (fabsf(entity.targetTemp - entity.lastTargetTemp) > 0.01f && !userHoldsControl(entityIndex)) {
+                if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", entity.targetTemp);
                 
-                // Update target temperature label (3rd label after title)
-                uint32_t childCount = lv_obj_get_child_cnt(tile);
-                int labelCount = 0;
-                for (uint32_t i = 0; i < childCount; i++) {
-                    lv_obj_t* child = lv_obj_get_child(tile, i);
-                    if (child && lv_obj_check_type(child, &lv_label_class)) {
-                        labelCount++;
-                        if (labelCount == 1) { // Title - skip
-                            continue;
-                        } else if (labelCount == 2) { // Current temp - skip
-                            continue;
-                        } else if (labelCount == 3) { // Target temp label
-                            lv_label_set_text_fmt(child, "Target: %.1f°C", entity.targetTemp);
-                            break;
-                        }
-                    }
-                }
-                
-                // Update arc position to match target temperature
-                lv_obj_t* arc = (lv_obj_t*)lv_obj_get_user_data(tile);
-                if (arc && lv_obj_check_type(arc, &lv_arc_class)) {
-                    // Convert temperature (10-30°C) to arc value (0-100)
-                    int arc_value = (int)((entity.targetTemp - 10.0) / 20.0 * 100.0);
-                    // Clamp to valid range
+                // Map the target onto the arc using the entity's own min/max range
+                float range = entity.maxTemp - entity.minTemp;
+                if (entity.wControl && range > 0) {
+                    int arc_value = (int)lroundf((entity.targetTemp - entity.minTemp) / range * 100.0f);
                     arc_value = (arc_value < 0) ? 0 : ((arc_value > 100) ? 100 : arc_value);
-                    lv_arc_set_value(arc, arc_value);
+                    lv_arc_set_value(entity.wControl, arc_value);
                 }
-                
                 entity.lastTargetTemp = entity.targetTemp;
             }
             
-            // Update HVAC status display
-            lv_obj_t* statusLabel = nullptr;
-            uint32_t childCount = lv_obj_get_child_cnt(tile);
-            int labelCount = 0;
-            for (uint32_t i = 0; i < childCount; i++) {
-                lv_obj_t* child = lv_obj_get_child(tile, i);
-                if (child && lv_obj_check_type(child, &lv_label_class)) {
-                    labelCount++;
-                    if (labelCount == 4) { // Status label (4th label)
-                        statusLabel = child;
-                        break;
-                    }
-                }
-            }
-            if (statusLabel) {
+            if (entity.wStatus) {
                 String statusText = entity.hvacMode;
                 if (entity.hvacAction != "idle" && entity.hvacAction != entity.hvacMode) {
                     statusText += " (" + entity.hvacAction + ")";
                 }
-                lv_label_set_text(statusLabel, statusText.c_str());
+                if (statusText != lv_label_get_text(entity.wStatus)) {
+                    lv_label_set_text(entity.wStatus, statusText.c_str());
+                }
             }
-            
             break;
         }
         case ENTITY_SENSOR: {
-            // Update separate sensor value and unit labels
             if (entity.sensorValue != entity.lastSensorValue) {
-                lv_obj_t* valueLabel = (lv_obj_t*)lv_obj_get_user_data(tile);
-                if (valueLabel) {
-                    // Update the large sensor value
-                    lv_label_set_text(valueLabel, entity.sensorValue.c_str());
-                    
-                    // Find and update the unit label - simple approach by checking label count
-                    uint32_t childCount = lv_obj_get_child_cnt(tile);
-                    lv_obj_t* unitLabel = nullptr;
-                    int labelCount = 0;
-                    for (uint32_t i = 0; i < childCount; i++) {
-                        lv_obj_t* child = lv_obj_get_child(tile, i);
-                        if (child && lv_obj_check_type(child, &lv_label_class)) {
-                            labelCount++;
-                            // The unit label is typically the 4th label (after title, icon, value)
-                            if (labelCount >= 4 && child != valueLabel) {
-                                unitLabel = child;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    if (unitLabel) {
-                        lv_label_set_text(unitLabel, entity.sensorUnit.c_str());
-                        // Re-position unit label next to updated value label
-                        lv_obj_align_to(unitLabel, valueLabel, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
-                    }
+                if (entity.wValue) lv_label_set_text(entity.wValue, entity.sensorValue.c_str());
+                if (entity.wUnit) {
+                    lv_label_set_text(entity.wUnit, entity.sensorUnit.c_str());
+                    if (entity.wValue) lv_obj_align_to(entity.wUnit, entity.wValue, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
                 }
-                Serial.println("Sensor value updated: " + entity.sensorValue + " " + entity.sensorUnit);
                 entity.lastSensorValue = entity.sensorValue;
             }
             break;
         }
         case ENTITY_FAN: {
-            // Update fan speed - simplified for compatibility
-            if (entity.fanSpeed != entity.lastFanSpeed) {
-                Serial.println("Fan speed updated to: " + String(entity.fanSpeed) + "%");
+            if (entity.fanSpeed != entity.lastFanSpeed && !userHoldsControl(entityIndex)) {
+                if (entity.wControl) lv_slider_set_value(entity.wControl, entity.fanSpeed, LV_ANIM_OFF);
+                if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", entity.fanSpeed);
                 entity.lastFanSpeed = entity.fanSpeed;
             }
             break;
@@ -1128,14 +1066,11 @@ void handleEncoderButton() {
                 entities[currentTileIndex].state = !entities[currentTileIndex].state;
                 handleEntityAction(currentTileIndex, "toggle", String(entities[currentTileIndex].state));
                 // Update UI switch state
-                if (entities[currentTileIndex].tile) {
-                    lv_obj_t* sw = (lv_obj_t*)lv_obj_get_user_data(entities[currentTileIndex].tile);
-                    if (sw) {
-                        if (entities[currentTileIndex].state) {
-                            lv_obj_add_state(sw, LV_STATE_CHECKED);
-                        } else {
-                            lv_obj_clear_state(sw, LV_STATE_CHECKED);
-                        }
+                if (entities[currentTileIndex].wControl) {
+                    if (entities[currentTileIndex].state) {
+                        lv_obj_add_state(entities[currentTileIndex].wControl, LV_STATE_CHECKED);
+                    } else {
+                        lv_obj_clear_state(entities[currentTileIndex].wControl, LV_STATE_CHECKED);
                     }
                 }
                 break;
@@ -1177,22 +1112,9 @@ void setup() {
     lv_timer_handler();
     delay(500);
     
-    // Show WiFi overlay while connecting
-    showWiFiOverlay(true);
-    updateWiFiOverlayStatus("Connecting to WiFi...");
+    // Connect to WiFi in the background; the overlay shows progress from loop()
+    startWiFi();
     lv_timer_handler(); // Ensure overlay is drawn
-    
-    connectToWiFi();
-    
-    // Hide WiFi overlay after connection attempt
-    if (connectionEstablished) {
-        updateWiFiOverlayStatus("WiFi Connected!");
-        delay(1000); // Show success message briefly
-    } else {
-        updateWiFiOverlayStatus("WiFi Connection Failed");
-        delay(2000); // Show error message longer
-    }
-    showWiFiOverlay(false);
     
     // Initialize WebSocket manager
     if (wsManager.begin()) {
@@ -1221,30 +1143,14 @@ void loop() {
     // Handle encoder button
     handleEncoderButton();
     
-    // Process pending API requests
-    if (pendingRequest && millis() - requestStartTime >= requestProcessInterval) {
-        processAPIRequest();
-    }
+    // Send queued commands
+    processAPIRequest();
     
-    // WiFi connection management
-    if (WiFi.status() != WL_CONNECTED) {
-        if (connectionEstablished) {
-            connectionEstablished = false;
-            Serial.println("WiFi connection lost!");
-            lastWiFiRetry = millis();
-        }
-        
-        if (millis() - lastWiFiRetry > wifiRetryInterval) {
-            Serial.println("Attempting to reconnect to WiFi...");
-            connectToWiFi();
-            lastWiFiRetry = millis();
-        }
-    } else {
-        if (!connectionEstablished) {
-            connectionEstablished = true;
-        }
-        
-        // Process WebSocket events (replaces periodic polling)
+    // WiFi supervision (non-blocking)
+    serviceWiFi();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        // Process WebSocket events and REST fallback
         wsManager.loop();
         
         // Update connection status based on WebSocket state
