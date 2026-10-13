@@ -5,9 +5,9 @@
 #include <string.h>
 
 // Position of indicator dot i of n on the bottom bezel arc: centered at 90 degrees
-// (straight down), `spacingDeg` apart, on a circle of `radius` around (cx, cy).
+// (straight down), `spacingDeg` apart, first dot on the left, on a circle of `radius` around (cx, cy).
 inline void uiDotPosition(int i, int n, int cx, int cy, int radius, int spacingDeg, int* x, int* y) {
-    const float angle = (90.0f + (i - (n - 1) / 2.0f) * spacingDeg) * 3.14159265f / 180.0f;
+    const float angle = (90.0f - (i - (n - 1) / 2.0f) * spacingDeg) * 3.14159265f / 180.0f;
     *x = cx + (int)lroundf(radius * cosf(angle));
     *y = cy + (int)lroundf(radius * sinf(angle));
 }

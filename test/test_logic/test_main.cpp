@@ -70,6 +70,11 @@ void test_dot_positions() {
     uiDotPosition(0, 1, 195, 195, 172, 7, &x, &y);
     TEST_ASSERT_EQUAL_INT(195, x);
     TEST_ASSERT_EQUAL_INT(367, y);
+    // dots run left to right
+    uiDotPosition(0, 3, 195, 195, 172, 7, &x, &y);
+    int xr, yr;
+    uiDotPosition(2, 3, 195, 195, 172, 7, &xr, &yr);
+    TEST_ASSERT_TRUE(x < xr);
     // even count is symmetric around the vertical axis
     int xa, ya, xb, yb;
     uiDotPosition(0, 6, 195, 195, 172, 7, &xa, &ya);
