@@ -274,13 +274,8 @@ private:
         String message;
         serializeJson(doc, message);
         
-        // Debug output (truncated token for security)
-        String debugToken = String(HA_TOKEN);
-        if (debugToken.length() > 10) {
-            debugToken = debugToken.substring(0, 10) + "..." + debugToken.substring(debugToken.length() - 10);
-        }
-        Serial.println("[WS] Auth token: " + debugToken);
-        Serial.println("[WS] Auth message: " + message);
+        // Never log the token or the auth message
+        Serial.printf("[WS] Sending auth (token length %u)\n", (unsigned)strlen(HA_TOKEN));
         
         webSocket.sendTXT(message);
     }

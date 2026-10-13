@@ -1,0 +1,15 @@
+/*
+ * Copy this file to ha_config_private.h (gitignored) and fill in real values.
+ * It is included after ha_config.h and overrides the placeholder defaults.
+ */
+#pragma once
+
+#undef WIFI_SSID
+#undef WIFI_PASSWORD
+#define WIFI_SSID "your_wifi_network"
+#define WIFI_PASSWORD "your_wifi_password"
+
+#undef HA_URL
+#undef HA_TOKEN
+#define HA_URL "http://homeassistant.local:8123/"
+#define HA_TOKEN "your_long_lived_access_token"

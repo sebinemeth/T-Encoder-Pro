@@ -14,7 +14,11 @@
 #include "port/lv_port_indev.h"
 #include "pin_config.h"
 #include "ha_config.h"
+#if __has_include("ha_config_private.h")
 #include "ha_config_private.h" // Override defaults with actual values
+#else
+#warning "ha_config_private.h not found: copy ha_config_private.h.example and fill in your WiFi/HA credentials"
+#endif
 #include "ha_websocket_config.h"
 #include "ha_websocket_manager_v2.h"
 #include "entities.h"
