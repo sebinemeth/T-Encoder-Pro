@@ -73,6 +73,7 @@ unsigned long editLastActivity = 0;
 const unsigned long editTimeout = 5000;
 const int coverEditStep = 5;     // % per detent
 const int fanEditStep = 10;      // % per detent
+float editValue = 0;             // value being dialled in; HA updates must not move it
 
 // Tileview scroll animations can emit a stale VALUE_CHANGED; ignore events that
 // disagree with an encoder-initiated move for a short while.
@@ -936,6 +937,7 @@ void processAPIRequest() {
 // True while the user is interacting with an entity's control; incoming HA values
 // are held back from the widget so they don't fight the drag (applied afterwards).
 static bool userHoldsControl(int entityIndex) {
+    if (editMode && entityIndex == currentTileIndex) return true; // whole edit session
     return millis() - lastUserInteraction[entityIndex] < uiSyncHoldoff;
 }
 
@@ -1019,6 +1021,32 @@ void updateEntityTile(int entityIndex) {
     }
 }
 
+// ---- Toast (short on-screen feedback) ----
+static lv_obj_t* toastLabel = nullptr;
+static lv_timer_t* toastTimer = nullptr;
+
+static void showToast(const char* text, uint32_t durationMs = 1200) {
+    if (!toastLabel) {
+        toastLabel = lv_label_create(lv_layer_top());
+        lv_obj_add_style(toastLabel, &style_value_small, 0);
+        lv_obj_set_style_bg_color(toastLabel, lv_color_hex(0x333333), 0);
+        lv_obj_set_style_bg_opa(toastLabel, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(toastLabel, 12, 0);
+        lv_obj_set_style_pad_all(toastLabel, 8, 0);
+        lv_obj_align(toastLabel, LV_ALIGN_BOTTOM_MID, 0, -60);
+        toastTimer = lv_timer_create([](lv_timer_t* t) {
+            lv_obj_add_flag(toastLabel, LV_OBJ_FLAG_HIDDEN);
+            lv_timer_pause(t);
+        }, durationMs, nullptr);
+    }
+    lv_label_set_text(toastLabel, text);
+    lv_obj_align(toastLabel, LV_ALIGN_BOTTOM_MID, 0, -60);
+    lv_obj_clear_flag(toastLabel, LV_OBJ_FLAG_HIDDEN);
+    lv_timer_set_period(toastTimer, durationMs);
+    lv_timer_reset(toastTimer);
+    lv_timer_resume(toastTimer);
+}
+
 // ---- Encoder input ----
 
 static bool isAdjustable(EntityType type) {
@@ -1037,6 +1065,10 @@ static void setEditHighlight(int entityIndex, bool on) {
 static void enterEditMode() {
     editMode = true;
     editLastActivity = millis();
+    const HAEntity& entity = entities[currentTileIndex];
+    editValue = entity.type == ENTITY_COVER ? entity.position
+              : entity.type == ENTITY_FAN ? entity.fanSpeed
+              : entity.targetTemp;
     setEditHighlight(currentTileIndex, true);
     Serial.println("Edit mode: " + entities[currentTileIndex].name);
 }
@@ -1061,13 +1093,16 @@ static void adjustCurrentValue(int detents) {
     HAEntity& entity = entities[currentTileIndex];
     switch (entity.type) {
         case ENTITY_COVER:
-            setCoverPosition(currentTileIndex, entity.position + detents * coverEditStep, false);
+            editValue = constrain(editValue + detents * coverEditStep, 0, 100);
+            setCoverPosition(currentTileIndex, (int)editValue, false);
             break;
         case ENTITY_FAN:
-            setFanSpeed(currentTileIndex, entity.fanSpeed + detents * fanEditStep, false);
+            editValue = constrain(editValue + detents * fanEditStep, 0, 100);
+            setFanSpeed(currentTileIndex, (int)editValue, false);
             break;
         case ENTITY_THERMOSTAT:
-            setTargetTemp(currentTileIndex, entity.targetTemp + detents * thermostatStep);
+            editValue = constrain(editValue + detents * thermostatStep, entity.minTemp, entity.maxTemp);
+            setTargetTemp(currentTileIndex, editValue);
             break;
         default:
             break;
@@ -1110,6 +1145,7 @@ void handleEncoderInput() {
         exitEditMode();
         if (entities[currentTileIndex].type == ENTITY_COVER) {
             handleEntityAction(currentTileIndex, "cover_stop");
+            showToast("Stopped");
         }
     }
     
