@@ -15,7 +15,7 @@ The HomeAssistant_LVGL project now uses WebSocket communication for real-time en
 
 ### Components
 
-1. **HAWebSocketManager** (`ha_websocket_manager.h`): Core WebSocket client implementation
+1. **HAWebSocketManager** (`ha_websocket_manager_v2.h`): Core WebSocket client implementation
 2. **WebSocket Configuration** (`ha_websocket_config.h`): Configuration constants and state definitions
 3. **Main Application** (`HomeAssistant_LVGL.ino`): Integrated WebSocket event processing
 
@@ -50,8 +50,7 @@ enum WebSocketState {
 ```ini
 lib_deps = 
     bblanchon/ArduinoJson@^6.21.3
-    ottowinter/ESPAsyncWebServer-esphome@^3.0.0
-    me-no-dev/AsyncTCP@^1.1.1
+    links2004/WebSockets@^2.4.1
 ```
 
 ### WebSocket Settings (`ha_websocket_config.h`)

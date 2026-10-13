@@ -1,0 +1,41 @@
+name: Check upstream
+
+# Weekly look at LilyGO's T-Encoder-Pro for changes that matter to this project
+# (pins, hardware variants, display/touch libraries, examples). See AGENTS.md.
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Look for relevant upstream changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA=$(grep -oE 'Last synced upstream SHA: `[0-9a-f]{40}`' AGENTS.md | grep -oE '[0-9a-f]{40}')
+          BRANCH=arduino-esp32-libs_V3.0.7
+          UP=Xinyuan-LilyGO/T-Encoder-Pro
+          COMPARE=$(gh api "repos/$UP/compare/$SHA...$BRANCH" --paginate)
+          FILES=$(printf "%s" "$COMPARE" | jq -r '.files[].filename' \
+            | grep -E '^(libraries/Mylibrary|examples/|libraries/Arduino_GFX|libraries/Arduino_DriveBus|README\.md)' \
+            | grep -vE '^libraries/Arduino_GFX[^/]*/(examples|more_examples)/' || true)
+          if [ -z "$FILES" ]; then
+            echo "No relevant upstream changes since $SHA"
+            exit 0
+          fi
+          TITLE="Upstream changes to review"
+          if [ -n "$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[].number')" ]; then
+            echo "Review issue already open"
+            exit 0
+          fi
+          LOG=$(printf "%s" "$COMPARE" | jq -r '.commits[] | "- \(.sha[0:7]) \(.commit.message | split("\n")[0])"')
+          gh issue create --title "$TITLE" --body "$(printf 'Upstream moved past `%s`. Follow the routine in AGENTS.md and update the synced SHA.\n\nCommits:\n%s\n\nRelevant files:\n```\n%s\n```\n' "$SHA" "$LOG" "$FILES")"

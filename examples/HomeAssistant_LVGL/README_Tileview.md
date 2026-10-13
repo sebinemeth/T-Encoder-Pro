@@ -69,7 +69,7 @@ In `entities.h`, you can now define entities with automatic type detection:
 ```cpp
 HAEntity entities[ENTITY_COUNT] = {
     {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, /* other fields auto-initialized */},
-    {"Office Cover", "cover.office_blinds", ENTITY_COVER, /* other fields auto-initialized */},
+    {"Bedroom Cover", "cover.bedroom_cover", ENTITY_COVER, /* other fields auto-initialized */},
     {"Thermostat", "climate.living_room", ENTITY_THERMOSTAT, /* other fields auto-initialized */},
     {"Temperature", "sensor.temperature", ENTITY_SENSOR, /* other fields auto-initialized */}
 };

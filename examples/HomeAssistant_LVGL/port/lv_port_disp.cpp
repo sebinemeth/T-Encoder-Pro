@@ -16,8 +16,8 @@
 /*********************
  *      DEFINES
  *********************/
-#define MY_DISP_HOR_RES LCD_WIDTH
-#define MY_DISP_VER_RES LCD_HEIGHT
+#define MY_DISP_HOR_RES SCREEN_WIDTH
+#define MY_DISP_VER_RES SCREEN_HEIGHT
 
 /**********************
  *      TYPEDEFS
@@ -33,11 +33,11 @@ static void disp_flush(lv_disp_drv_t * disp_drv, const lv_area_t * area, lv_colo
  *  STATIC VARIABLES
  **********************/
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
-    LCD_CS /* CS */, LCD_SCLK /* SCK */, LCD_SDIO0 /* SDIO0 */,
-    LCD_SDIO1 /* SDIO1 */, LCD_SDIO2 /* SDIO2 */, LCD_SDIO3 /* SDIO3 */);
+    SCREEN_CS /* CS */, SCREEN_SCLK /* SCK */, SCREEN_SDIO0 /* SDIO0 */,
+    SCREEN_SDIO1 /* SDIO1 */, SCREEN_SDIO2 /* SDIO2 */, SCREEN_SDIO3 /* SDIO3 */);
 
-Arduino_GFX *gfx = new Arduino_SH8601(bus, LCD_RST /* RST */, 0 /* rotation */,
-                                      false /* IPS */, LCD_WIDTH, LCD_HEIGHT);
+Arduino_GFX *gfx = new Arduino_SH8601(bus, SCREEN_RST /* RST */, 0 /* rotation */,
+                                      false /* IPS */, SCREEN_WIDTH, SCREEN_HEIGHT);
 
 volatile bool disp_flush_enabled = true;
 
@@ -95,8 +95,8 @@ void lv_port_disp_init(void)
 static void disp_init(void)
 {
     // Enable LCD power
-    pinMode(LCD_VCI_EN, OUTPUT);
-    digitalWrite(LCD_VCI_EN, HIGH);
+    pinMode(SCREEN_EN, OUTPUT);
+    digitalWrite(SCREEN_EN, HIGH);
 
     // Initialize display
     if (!gfx->begin())

@@ -8,7 +8,7 @@
 
 // WiFi Configuration
 // IMPORTANT: Update these values with your actual WiFi credentials
-// Consider using environment variables or a separate config file for sensitive data
+// Put real values in ha_config_private.h (gitignored), see ha_config_private.h.example
 #ifndef WIFI_SSID
 #define WIFI_SSID "your_wifi_network"
 #endif
@@ -24,11 +24,3 @@
 #ifndef HA_TOKEN
 #define HA_TOKEN "your_home_assistant_token_here"
 #endif
-
-// Entity Configuration
-#define SWITCH_ENTITY_ID "input_boolean.lilygo_test"
-#define SWITCH_FRIENDLY_NAME "LilyGo Test"
-
-// Display Configuration
-#define UPDATE_INTERVAL_MS 5000  // Update entity state every 5 seconds
-#define DEBOUNCE_DELAY_MS 300    // Debounce for encoder button press

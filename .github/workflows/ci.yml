@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [sebinemeth-projects, arduino-esp32-libs_V3.0.7]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      - run: pio test -e native
+
+  firmware:
+    name: Build firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-esp32-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+      - run: pip install platformio
+      # No ha_config_private.h in CI: the build uses the placeholder credentials
+      # from ha_config.h (a warning is expected). The binary is for build checking only.
+      - run: pio run -e HomeAssistant_LVGL
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-placeholder-credentials
+          path: .pio/build/HomeAssistant_LVGL/firmware.bin
+          retention-days: 7
