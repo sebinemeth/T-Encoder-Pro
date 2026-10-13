@@ -8,20 +8,20 @@ A professional Home Assistant controller for the LilyGo T-Encoder Pro with dual 
 - **Dual Input**: Touch screen and rotary encoder navigation  
 - **Optimistic UI**: Immediate feedback with background API calls
 - **Touch Integration**: Direct switch toggling via CHSC5816 touch controller
-- **Secure Configuration**: Environment-based sensitive data management
+- **Secure Configuration**: Credentials live in a gitignored header
 
 ## Quick Setup
 
 ### 1. Security Configuration
 
-**IMPORTANT**: This project uses a secure configuration system to protect sensitive data.
+**IMPORTANT**: Credentials are never stored in tracked files. The build does not read `.env`.
 
 ```bash
-# Copy the environment template
-cp ../../.env.example ../../.env
+# Copy the template (gitignored once copied)
+cp ha_config_private.h.example ha_config_private.h
 
-# Edit the .env file with your actual credentials
-# - WiFi SSID and password  
+# Edit ha_config_private.h with your actual credentials
+# - WiFi SSID and password
 # - Home Assistant URL and long-lived access token
 ```
 
@@ -52,10 +52,9 @@ pio device monitor --baud 115200
 
 ## Configuration Files
 
-- **`ha_config.h`**: Template configuration with safe defaults
-- **`ha_config_private.h`**: Overrides with actual values (auto-generated, gitignored)
+- **`ha_config.h`**: Template configuration with safe placeholder defaults
+- **`ha_config_private.h`**: Overrides with actual values (copy of `ha_config_private.h.example`, gitignored)
 - **`entities.h`**: Entity definitions (customize this)
-- **`.env`**: Environment variables (gitignored)
 
 ## Usage
 
@@ -86,7 +85,7 @@ pio device monitor --baud 115200
 ## Security Features
 
 - ✅ **No hardcoded credentials** in source code
-- ✅ **Environment variables** for sensitive data
+- ✅ **Private header** (`ha_config_private.h`) for sensitive data
 - ✅ **Gitignore protection** for private files
 - ✅ **Template system** for safe sharing
 - ✅ **Override pattern** for local customization
@@ -94,7 +93,7 @@ pio device monitor --baud 115200
 ## Troubleshooting
 
 ### WiFi Connection Issues
-- Verify SSID and password in .env file
+- Verify SSID and password in `ha_config_private.h`
 - Check WiFi signal strength
 - Monitor serial output for connection attempts
 

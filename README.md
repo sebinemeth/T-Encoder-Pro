@@ -6,7 +6,7 @@ Based on LilyGO's T-Encoder-Pro examples (GPL-3.0). See [AGENTS.md](AGENTS.md) f
 
 ## Build
 
-1. Copy `examples/HomeAssistant_LVGL/ha_config.h` values into a gitignored `examples/HomeAssistant_LVGL/ha_config_private.h` (WiFi SSID/password, HA URL, long-lived token). See `.env.example` for the fields.
+1. Copy `examples/HomeAssistant_LVGL/ha_config_private.h.example` to `ha_config_private.h` (gitignored) and fill in WiFi SSID/password, HA URL and long-lived token.
 2. Edit the entity list in `examples/HomeAssistant_LVGL/entities.h`.
 3. `pio run -t upload` (PlatformIO). Select the board variant in `libraries/Mylibrary/pin_config.h` (default `DXQ120MYB2416A`).
 
