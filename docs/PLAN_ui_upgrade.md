@@ -1,6 +1,6 @@
 # Plan: UI upgrade (dark, AMOLED-first, Home Assistant-like but minimal)
 
-Status: mockups approved, implementation not started.
+Status: mockups approved. Phase 0 and Phase 1 done (LVGL heap after UI: 35516 of 49152 bytes free, biggest block 35516, measured after Phase 1; no pre-Phase-1 baseline was recorded).
 
 Related plans: [PLAN_light_brightness.md](PLAN_light_brightness.md) (after Phase 3), [PLAN_runtime_config.md](PLAN_runtime_config.md) (independent, see "Start here").
 

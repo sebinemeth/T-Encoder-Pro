@@ -3,6 +3,7 @@
 #include "app_logic.h"
 #include "service_call.h"
 #include "encoder_decoder.h"
+#include "ui_icons.h"
 
 void setUp() {}
 void tearDown() {}
@@ -41,6 +42,24 @@ void test_default_icons() {
 }
 
 // ---- thermostat math ----
+
+// ---- icon mapping ----
+
+void test_icon_glyphs() {
+    TEST_ASSERT_EQUAL_STRING("\xF3\xB0\x8C\xB5", uiIconGlyph("mdi:lightbulb"));  // U+F0335
+    // every default icon of a known domain has its own glyph
+    const char* domains[] = {"light", "switch", "input_boolean", "sensor", "fan", "climate", "cover"};
+    for (const char* d : domains) {
+        TEST_ASSERT_NOT_EQUAL(0, strcmp(UI_ICON_FALLBACK, uiIconGlyph(defaultIconForDomain(d))));
+    }
+}
+
+void test_icon_fallback() {
+    TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph("mdi:does-not-exist"));
+    TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph("lightbulb"));
+    TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph(""));
+    TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph(nullptr));
+}
 
 void test_snap_to_step() {
     TEST_ASSERT_EQUAL_FLOAT(21.5f, snapToStep(21.6f, 0.5f));
@@ -182,6 +201,8 @@ int main() {
     RUN_TEST(test_domain_of);
     RUN_TEST(test_entity_type_for_domain);
     RUN_TEST(test_default_icons);
+    RUN_TEST(test_icon_glyphs);
+    RUN_TEST(test_icon_fallback);
     RUN_TEST(test_snap_to_step);
     RUN_TEST(test_temp_arc_mapping);
     RUN_TEST(test_temp_arc_roundtrip_within_a_step);
