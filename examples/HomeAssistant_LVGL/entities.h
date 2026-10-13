@@ -61,6 +61,7 @@ struct HAEntity {
     lv_obj_t* wTarget;     // thermostat target label
     lv_obj_t* wStatus;     // status / HVAC label
     lv_obj_t* wUnit;       // sensor unit label
+    lv_obj_t* wActual;     // cover: marker for the real position (wControl shows the target)
 };
 
 // ---- Domain helpers (single source of truth for type/icon mapping) ----
@@ -133,8 +134,8 @@ const int ENTITY_COUNT = 4;
 
 HAEntity entities[ENTITY_COUNT] = {
     // Basic initialization - extended fields are set automatically in initializeEntities()
-    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
-    {"Bedroom Cover", "cover.bedroom_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
-    {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr},
-    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr}
+    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Bedroom Cover", "cover.bedroom_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr},
+    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr}
 };

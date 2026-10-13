@@ -119,7 +119,7 @@ void initializeEntities() {
         // Initialize all entity fields to defaults
         entities[i].iconFetched = false;
         entities[i].tile = nullptr;
-        entities[i].wControl = entities[i].wValue = entities[i].wTarget = entities[i].wStatus = entities[i].wUnit = nullptr;
+        entities[i].wControl = entities[i].wValue = entities[i].wTarget = entities[i].wStatus = entities[i].wUnit = entities[i].wActual = nullptr;
         entities[i].tileCreated = false;
         
         // Initialize type-specific fields
@@ -393,6 +393,21 @@ void createCoverTile(int entityIndex) {
     lv_obj_add_style(slider, &style_slider, 0);
     lv_obj_add_event_cb(slider, slider_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
     
+    // Real-position marker: a second, read-only slider whose small orange knob sits on top
+    // of the main slider. The main knob shows the target, this one where the cover is.
+    lv_obj_t* actual = lv_slider_create(tile);
+    lv_obj_set_size(actual, 250, 25);
+    lv_slider_set_range(actual, 0, 100);
+    lv_slider_set_value(actual, entities[entityIndex].position, LV_ANIM_OFF);
+    lv_obj_align(actual, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_clear_flag(actual, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(actual, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(actual, LV_OPA_TRANSP, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(actual, lv_color_hex(0xFF9800), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(actual, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(actual, -5, LV_PART_KNOB); // smaller than the main knob
+    lv_obj_add_flag(actual, LV_OBJ_FLAG_HIDDEN);         // shown only while it differs from the target
+    
     // Position percentage label
     lv_obj_t* pos_label = lv_label_create(tile);
     lv_label_set_text_fmt(pos_label, "%d%%", entities[entityIndex].position);
@@ -448,8 +463,16 @@ void createCoverTile(int entityIndex) {
     
     // Store slider and label references for updates (using a simple container approach)
     // We'll store the slider as the main user data, and find other elements when updating
+    // State line: "Opening - 44%"
+    lv_obj_t* state_label = lv_label_create(tile);
+    lv_label_set_text(state_label, "");
+    lv_obj_add_style(state_label, &style_value_small, 0);
+    lv_obj_align(state_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    
     entities[entityIndex].wControl = slider;
     entities[entityIndex].wValue = pos_label;
+    entities[entityIndex].wStatus = state_label;
+    entities[entityIndex].wActual = actual;
 }
 
 // Event handler for thermostat arc
@@ -962,10 +985,25 @@ void updateEntityTile(int entityIndex) {
             break;
         }
         case ENTITY_COVER: {
+            // Target control follows HA only when the user isn't adjusting it
             if (entity.position != entity.lastPosition && !userHoldsControl(entityIndex)) {
                 if (entity.wControl) lv_slider_set_value(entity.wControl, entity.position, LV_ANIM_OFF);
                 if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", entity.position);
                 entity.lastPosition = entity.position;
+            }
+            
+            // Real position and state are always live, even while editing
+            if (entity.wActual && entity.wControl) {
+                lv_slider_set_value(entity.wActual, entity.position, LV_ANIM_OFF);
+                bool differs = lv_slider_get_value(entity.wControl) != entity.position;
+                if (differs) lv_obj_clear_flag(entity.wActual, LV_OBJ_FLAG_HIDDEN);
+                else lv_obj_add_flag(entity.wActual, LV_OBJ_FLAG_HIDDEN);
+            }
+            if (entity.wStatus) {
+                String text = entity.coverState.length() && entity.coverState != "unknown" ? entity.coverState : String("--");
+                text.setCharAt(0, toupper(text.charAt(0)));
+                text += " - " + String(entity.position) + "%";
+                if (text != lv_label_get_text(entity.wStatus)) lv_label_set_text(entity.wStatus, text.c_str());
             }
             break;
         }
