@@ -29,6 +29,11 @@
 #define UI_DISC_RADIUS        64    // icon disc (128 px)
 #define UI_DOTS_RADIUS        172   // indicator dots on the bottom bezel
 #define UI_DOTS_SPACING_DEG   7
+#define UI_DOT_SIZE           6
+#ifndef UI_DOTS_MAX
+#define UI_DOTS_MAX           12    // above this the dots become an "n / N" caption
+#endif
+#define UI_COLOR_DOT_IDLE     0x2A2D32
 
 // Text baselines (y from the top of the 390 px face) and the width usable there
 #define UI_Y_NAME_PLAIN       74    // name on tiles without a ring (light, switch), ~190 px wide
@@ -72,3 +77,8 @@ extern lv_style_t style_sensor_unit;
 extern lv_style_t style_button;
 extern lv_style_t style_slider;
 extern lv_style_t style_icon_mdi;   // MDI glyph, small
+
+// ---- Chrome shared by all tiles (ui_chrome.cpp) ----
+void uiCreateDots(int count);        // count decided once, at UI build time
+void uiUpdateDots(int active);
+void uiShowToast(const char* text, uint32_t durationMs = 1200);

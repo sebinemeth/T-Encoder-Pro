@@ -4,6 +4,7 @@
 #include "service_call.h"
 #include "encoder_decoder.h"
 #include "ui_icons.h"
+#include "ui_layout.h"
 
 void setUp() {}
 void tearDown() {}
@@ -59,6 +60,37 @@ void test_icon_fallback() {
     TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph("lightbulb"));
     TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph(""));
     TEST_ASSERT_EQUAL_STRING(UI_ICON_FALLBACK, uiIconGlyph(nullptr));
+}
+
+// ---- UI layout ----
+
+void test_dot_positions() {
+    int x, y;
+    // single dot sits straight below the center, on the radius
+    uiDotPosition(0, 1, 195, 195, 172, 7, &x, &y);
+    TEST_ASSERT_EQUAL_INT(195, x);
+    TEST_ASSERT_EQUAL_INT(367, y);
+    // even count is symmetric around the vertical axis
+    int xa, ya, xb, yb;
+    uiDotPosition(0, 6, 195, 195, 172, 7, &xa, &ya);
+    uiDotPosition(5, 6, 195, 195, 172, 7, &xb, &yb);
+    TEST_ASSERT_EQUAL_INT(390, xa + xb);
+    TEST_ASSERT_EQUAL_INT(ya, yb);
+    // the 12-dot limit spans 77 degrees and stays inside the screen
+    uiDotPosition(0, 12, 195, 195, 172, 7, &x, &y);
+    TEST_ASSERT_TRUE(x > 60 && y < 390);
+}
+
+void test_digits_font_coverage() {
+    TEST_ASSERT_TRUE(uiFitsDigitsFont("24.9"));
+    TEST_ASSERT_TRUE(uiFitsDigitsFont("-3.5"));
+    TEST_ASSERT_TRUE(uiFitsDigitsFont("21.8\xC2\xB0"));
+    TEST_ASSERT_TRUE(uiFitsDigitsFont("50%"));
+    TEST_ASSERT_FALSE(uiFitsDigitsFont("N/A"));
+    TEST_ASSERT_FALSE(uiFitsDigitsFont("Unavailable"));
+    TEST_ASSERT_FALSE(uiFitsDigitsFont("24.9C"));
+    TEST_ASSERT_FALSE(uiFitsDigitsFont(""));
+    TEST_ASSERT_FALSE(uiFitsDigitsFont(nullptr));
 }
 
 void test_snap_to_step() {
@@ -203,6 +235,8 @@ int main() {
     RUN_TEST(test_default_icons);
     RUN_TEST(test_icon_glyphs);
     RUN_TEST(test_icon_fallback);
+    RUN_TEST(test_dot_positions);
+    RUN_TEST(test_digits_font_coverage);
     RUN_TEST(test_snap_to_step);
     RUN_TEST(test_temp_arc_mapping);
     RUN_TEST(test_temp_arc_roundtrip_within_a_step);

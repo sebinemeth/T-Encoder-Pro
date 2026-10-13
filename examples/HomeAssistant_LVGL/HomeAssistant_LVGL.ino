@@ -39,8 +39,6 @@ int lastTileIndex = -1;
 lv_obj_t *wifi_overlay;
 lv_obj_t *wifi_spinner;
 lv_obj_t *wifi_status_label;
-lv_obj_t *indicator_dots[ENTITY_COUNT];
-lv_obj_t *indicator_container;
 
 // Global connection variables  
 bool connectionEstablished = false;
@@ -93,7 +91,6 @@ void setEntityTypeFromDomain(int entityIndex);
 void createWiFiOverlay();
 void showWiFiOverlay(bool show);
 void updateWiFiOverlayStatus(String status);
-void createIndicatorDots();
 void updateIndicatorDots();
 void exitEditMode();
 
@@ -255,53 +252,7 @@ void updateWiFiOverlayStatus(String status) {
     }
 }
 
-// Create indicator dots at the bottom of the screen
-void createIndicatorDots() {
-    lv_obj_t* main_screen = lv_scr_act();
-    
-    // Create container for dots
-    indicator_container = lv_obj_create(main_screen);
-    lv_obj_set_size(indicator_container, LV_HOR_RES, 30);
-    lv_obj_align(indicator_container, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_opa(indicator_container, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(indicator_container, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(indicator_container, 0, LV_PART_MAIN);
-    
-    // Calculate dot spacing
-    int dotSize = 8;
-    int dotSpacing = 16;
-    int totalWidth = (ENTITY_COUNT * dotSpacing) - (dotSpacing - dotSize);
-    int startX = (LV_HOR_RES - totalWidth) / 2;
-    
-    // Create individual dots
-    for (int i = 0; i < ENTITY_COUNT; i++) {
-        indicator_dots[i] = lv_obj_create(indicator_container);
-        lv_obj_set_size(indicator_dots[i], dotSize, dotSize);
-        lv_obj_set_pos(indicator_dots[i], startX + (i * dotSpacing), 11);
-        lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x666666), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(indicator_dots[i], LV_OPA_COVER, LV_PART_MAIN);
-        lv_obj_set_style_border_width(indicator_dots[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(indicator_dots[i], dotSize / 2, LV_PART_MAIN);
-    }
-    
-    // Set first dot as active
-    updateIndicatorDots();
-}
-
-// Update indicator dots to show current tile
-void updateIndicatorDots() {
-    for (int i = 0; i < ENTITY_COUNT; i++) {
-        if (indicator_dots[i]) {
-            if (i == currentTileIndex) {
-                // Active dot - bright green
-                lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x4CAF50), LV_PART_MAIN);
-            } else {
-                // Inactive dot - gray
-                lv_obj_set_style_bg_color(indicator_dots[i], lv_color_hex(0x666666), LV_PART_MAIN);
-            }
-        }
-    }
-}
+void updateIndicatorDots() { uiUpdateDots(currentTileIndex); }
 
 // Create the main tileview UI
 void createUI() {
@@ -312,7 +263,7 @@ void createUI() {
     
     // Create tileview
     tileview = lv_tileview_create(main_screen);
-    lv_obj_set_size(tileview, LV_HOR_RES, LV_VER_RES - 30); // Leave space for indicator dots
+    lv_obj_set_size(tileview, LV_HOR_RES, LV_VER_RES);
     lv_obj_align(tileview, LV_ALIGN_TOP_MID, 0, 0);
     
     // Hide tileview scrollbar
@@ -332,7 +283,7 @@ void createUI() {
     }
     
     // Create indicator dots
-    createIndicatorDots();
+    uiCreateDots(ENTITY_COUNT);
     
     // Create WiFi overlay
     createWiFiOverlay();
@@ -487,32 +438,6 @@ bool userHoldsControl(int entityIndex) {
     return millis() - lastUserInteraction[entityIndex] < uiSyncHoldoff;
 }
 
-// ---- Toast (short on-screen feedback) ----
-static lv_obj_t* toastLabel = nullptr;
-static lv_timer_t* toastTimer = nullptr;
-
-static void showToast(const char* text, uint32_t durationMs = 1200) {
-    if (!toastLabel) {
-        toastLabel = lv_label_create(lv_layer_top());
-        lv_obj_add_style(toastLabel, &style_value_small, 0);
-        lv_obj_set_style_bg_color(toastLabel, lv_color_hex(0x333333), 0);
-        lv_obj_set_style_bg_opa(toastLabel, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(toastLabel, 12, 0);
-        lv_obj_set_style_pad_all(toastLabel, 8, 0);
-        lv_obj_align(toastLabel, LV_ALIGN_BOTTOM_MID, 0, -60);
-        toastTimer = lv_timer_create([](lv_timer_t* t) {
-            lv_obj_add_flag(toastLabel, LV_OBJ_FLAG_HIDDEN);
-            lv_timer_pause(t);
-        }, durationMs, nullptr);
-    }
-    lv_label_set_text(toastLabel, text);
-    lv_obj_align(toastLabel, LV_ALIGN_BOTTOM_MID, 0, -60);
-    lv_obj_clear_flag(toastLabel, LV_OBJ_FLAG_HIDDEN);
-    lv_timer_set_period(toastTimer, durationMs);
-    lv_timer_reset(toastTimer);
-    lv_timer_resume(toastTimer);
-}
-
 // ---- Encoder input ----
 
 static bool isAdjustable(EntityType type) {
@@ -589,10 +514,7 @@ static void toggleCurrentEntity() {
     HAEntity& entity = entities[currentTileIndex];
     entity.state = !entity.state;
     handleEntityAction(currentTileIndex, "toggle", String(entity.state ? 1 : 0));
-    if (entity.wControl) {
-        if (entity.state) lv_obj_add_state(entity.wControl, LV_STATE_CHECKED);
-        else lv_obj_clear_state(entity.wControl, LV_STATE_CHECKED);
-    }
+    uiSetToggleState(currentTileIndex, entity.state);
 }
 
 void handleEncoderInput() {
@@ -621,7 +543,7 @@ void handleEncoderInput() {
         exitEditMode();
         if (entities[currentTileIndex].type == ENTITY_COVER) {
             handleEntityAction(currentTileIndex, "cover_stop");
-            showToast("Stopped");
+            uiShowToast("Stopped");
         }
     }
     

@@ -5,6 +5,7 @@
 #include "ui_tiles.h"
 #include "ui_theme.h"
 #include "ui_icons.h"
+#include "ui_layout.h"
 #include "entities_types.h"
 #include "app_logic.h"
 
@@ -25,7 +26,7 @@ void uiCreateStyles() {
     // Tile background style
     lv_style_init(&style_tile_bg);
     lv_style_set_bg_color(&style_tile_bg, lv_color_hex(0x000000));
-    lv_style_set_pad_all(&style_tile_bg, 10);
+    lv_style_set_pad_all(&style_tile_bg, 0);  // tiles are the full 390 px face; layout uses device coordinates
     
     // Title style
     lv_style_init(&style_title);
@@ -76,6 +77,49 @@ void uiCreateStyles() {
     lv_style_set_border_width(&style_slider, 2);
 }
 
+// ---- Layout helpers ----
+
+// Distance from the top of a label to its text baseline
+static int baselineOffset(const lv_font_t* font) {
+    return lv_font_get_line_height(font) - font->base_line;
+}
+
+// Single-line, centered, ellipsized label whose text baseline sits at y (device pixels,
+// 0 = top of the 390 px face) and which is at most `width` wide.
+static lv_obj_t* createLine(lv_obj_t* parent, const char* text, const lv_font_t* font, uint32_t color,
+                            int baselineY, int width) {
+    lv_obj_t* label = lv_label_create(parent);
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(label, width);
+    lv_label_set_text(label, text);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, baselineY - baselineOffset(font));
+    return label;
+}
+
+static void setLineText(lv_obj_t* label, const char* text) {
+    if (strcmp(lv_label_get_text(label), text) != 0) lv_label_set_text(label, text);
+}
+
+// ---- Toggle tile: state disc ----
+
+// Applies the checked state of the disc and the matching state text and colors
+static void applyToggleState(int entityIndex, bool on) {
+    HAEntity& entity = entities[entityIndex];
+    if (entity.wControl) {
+        if (on) lv_obj_add_state(entity.wControl, LV_STATE_CHECKED);
+        else lv_obj_clear_state(entity.wControl, LV_STATE_CHECKED);
+    }
+    if (entity.wStatus) {
+        lv_obj_set_style_text_color(entity.wStatus, lv_color_hex(on ? UI_COLOR_ACCENT_LIGHT : UI_COLOR_TEXT_DIM), 0);
+        setLineText(entity.wStatus, on ? "On" : "Off");
+    }
+}
+
+void uiSetToggleState(int entityIndex, bool on) { applyToggleState(entityIndex, on); }
+
 // Event handlers for different entity types
 static void toggle_event_handler(lv_event_t * e) {
     lv_event_code_t code = lv_event_get_code(e);
@@ -87,6 +131,7 @@ static void toggle_event_handler(lv_event_t * e) {
         Serial.println("Toggle via TOUCH for entity " + String(entityIndex) + ": " + String(is_checked ? "ON" : "OFF"));
         
         entities[entityIndex].state = is_checked;
+        applyToggleState(entityIndex, is_checked);
         handleEntityAction(entityIndex, "toggle", String(is_checked));
     }
 }
@@ -118,36 +163,41 @@ static void slider_event_handler(lv_event_t * e) {
     }
 }
 
-// Create UI for toggle entities (switches, lights)
+// Create UI for toggle entities (switches, lights): name, state disc, state text.
+// The disc is the touch target; it stays 128 px with room for a brightness ring around it
+// (docs/PLAN_light_brightness.md).
 void createToggleTile(int entityIndex) {
     lv_obj_t* tile = entities[entityIndex].tile;
-    
-    // Title
-    lv_obj_t* title = lv_label_create(tile);
-    lv_label_set_text(title, entities[entityIndex].name.c_str());
-    lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    
-    // Icon
-    lv_obj_t* icon = lv_label_create(tile);
-    lv_label_set_text(icon, uiIconGlyph(entities[entityIndex].icon.c_str()));
-    lv_obj_add_style(icon, &style_icon_mdi, 0);
-    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -40);
-    
-    // Switch
-    lv_obj_t* sw = lv_switch_create(tile);
-    lv_obj_set_size(sw, 80, 40);
-    lv_obj_align(sw, LV_ALIGN_CENTER, 0, 20);
-    lv_obj_add_event_cb(sw, toggle_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
-    
-    // Status label
-    lv_obj_t* status = lv_label_create(tile);
-    lv_label_set_text(status, "Ready");
-    lv_obj_add_style(status, &style_value_small, 0);
-    lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -10);
-    
-    entities[entityIndex].wControl = sw;
+
+    createLine(tile, entities[entityIndex].name.c_str(), UI_FONT_NAME, UI_COLOR_TEXT_DIM, UI_Y_NAME_PLAIN, UI_W_NAME_PLAIN);
+
+    // One label is both the disc and the icon: background, border and glyph color follow CHECKED
+    lv_obj_t* disc = lv_label_create(tile);
+    lv_label_set_long_mode(disc, LV_LABEL_LONG_CLIP);
+    lv_label_set_text(disc, uiIconGlyph(entities[entityIndex].icon.c_str()));
+    lv_obj_set_size(disc, UI_DISC_RADIUS * 2, UI_DISC_RADIUS * 2);
+    lv_obj_align(disc, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_text_font(disc, UI_FONT_ICON_L, 0);
+    lv_obj_set_style_text_align(disc, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_top(disc, (UI_DISC_RADIUS * 2 - lv_font_get_line_height(UI_FONT_ICON_L)) / 2, 0);
+    lv_obj_set_style_radius(disc, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(disc, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(disc, lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_text_color(disc, lv_color_hex(UI_COLOR_INACTIVE), 0);
+    lv_obj_set_style_bg_color(disc, lv_color_hex(UI_COLOR_ACCENT_LIGHT), LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(disc, LV_OPA_COVER * 14 / 100, LV_STATE_CHECKED);
+    lv_obj_set_style_text_color(disc, lv_color_hex(UI_COLOR_ACCENT_LIGHT), LV_STATE_CHECKED);
+    lv_obj_set_style_border_width(disc, 2, LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(disc, lv_color_hex(UI_COLOR_ACCENT_LIGHT), LV_STATE_CHECKED);
+    lv_obj_set_style_border_opa(disc, LV_OPA_COVER * 75 / 100, LV_STATE_CHECKED);
+    lv_obj_add_flag(disc, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CHECKABLE);
+    lv_obj_add_event_cb(disc, toggle_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
+
+    lv_obj_t* status = createLine(tile, "", UI_FONT_CAPTION, UI_COLOR_TEXT_DIM, 300, UI_W_CAPTION);
+
+    entities[entityIndex].wControl = disc;
     entities[entityIndex].wStatus = status;
+    applyToggleState(entityIndex, entities[entityIndex].state);
 }
 
 // Create UI for cover entities
@@ -158,13 +208,13 @@ void createCoverTile(int entityIndex) {
     lv_obj_t* title = lv_label_create(tile);
     lv_label_set_text(title, entities[entityIndex].name.c_str());
     lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
     
     // Icon
     lv_obj_t* icon = lv_label_create(tile);
     lv_label_set_text(icon, uiIconGlyph(entities[entityIndex].icon.c_str()));
     lv_obj_add_style(icon, &style_icon_mdi, 0);
-    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 50);
     
     // Position slider
     lv_obj_t* slider = lv_slider_create(tile);
@@ -249,7 +299,7 @@ void createCoverTile(int entityIndex) {
     lv_obj_t* state_label = lv_label_create(tile);
     lv_label_set_text(state_label, "");
     lv_obj_add_style(state_label, &style_value_small, 0);
-    lv_obj_align(state_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(state_label, LV_ALIGN_BOTTOM_MID, 0, -50);
     
     entities[entityIndex].wControl = slider;
     entities[entityIndex].wValue = pos_label;
@@ -278,7 +328,7 @@ void createThermostatTile(int entityIndex) {
     lv_obj_t* title = lv_label_create(tile);
     lv_label_set_text(title, entities[entityIndex].name.c_str());
     lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
     
     // Current temperature - large display at top center
     lv_obj_t* current_temp = lv_label_create(tile);
@@ -318,7 +368,7 @@ void createThermostatTile(int entityIndex) {
     lv_obj_t* status = lv_label_create(tile);
     lv_label_set_text(status, entities[entityIndex].hvacMode.c_str());
     lv_obj_add_style(status, &style_value_small, 0);
-    lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -50);
     
     entities[entityIndex].wControl = temp_arc;
     entities[entityIndex].wValue = current_temp;
@@ -326,34 +376,45 @@ void createThermostatTile(int entityIndex) {
     entities[entityIndex].wStatus = status;
 }
 
-// Create UI for sensor entities
+// Hero text: the digits-only 64 px font, or the 26 px font for values it has no glyphs for
+static void setHeroText(lv_obj_t* label, const char* text) {
+    lv_obj_set_style_text_font(label, uiFitsDigitsFont(text) ? UI_FONT_HERO_BIG : UI_FONT_SECOND, 0);
+    setLineText(label, text);
+}
+
+// Create UI for sensor entities: name, icon, value + unit (read-only)
 void createSensorTile(int entityIndex) {
     lv_obj_t* tile = entities[entityIndex].tile;
-    
-    // Title
-    lv_obj_t* title = lv_label_create(tile);
-    lv_label_set_text(title, entities[entityIndex].name.c_str());
-    lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
-    
-    // Icon - moved higher to make room for larger value
+
+    createLine(tile, entities[entityIndex].name.c_str(), UI_FONT_NAME, UI_COLOR_TEXT_DIM, 100, UI_W_NAME_RING);
+
     lv_obj_t* icon = lv_label_create(tile);
     lv_label_set_text(icon, uiIconGlyph(entities[entityIndex].icon.c_str()));
-    lv_obj_add_style(icon, &style_icon_mdi, 0);
-    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -80);
-    
-    // Very large sensor value label
-    lv_obj_t* valueLabel = lv_label_create(tile);
-    lv_label_set_text(valueLabel, entities[entityIndex].sensorValue.c_str());
-    lv_obj_add_style(valueLabel, &style_sensor_value, 0);
-    lv_obj_align(valueLabel, LV_ALIGN_CENTER, 0, 0);
-    
-    // Large sensor unit label positioned next to value
-    lv_obj_t* unitLabel = lv_label_create(tile);
+    lv_obj_set_style_text_font(icon, UI_FONT_ICON_S, 0);
+    lv_obj_set_style_text_color(icon, lv_color_hex(UI_COLOR_ACCENT_OK), 0);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, 150 - UI_CENTER);
+
+    // Value and unit share a row, bottom aligned, with the row's baseline at the hero baseline
+    lv_obj_t* row = lv_obj_create(tile);
+    lv_obj_remove_style_all(row);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(row, UI_W_HERO, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_column(row, 6, 0);
+    lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 232 + UI_FONT_HERO_BIG->base_line - lv_font_get_line_height(UI_FONT_HERO_BIG));
+
+    lv_obj_t* valueLabel = lv_label_create(row);
+    lv_obj_set_style_text_color(valueLabel, lv_color_hex(UI_COLOR_TEXT), 0);
+    setHeroText(valueLabel, entities[entityIndex].sensorValue.c_str());
+
+    lv_obj_t* unitLabel = lv_label_create(row);
+    lv_obj_set_style_text_font(unitLabel, UI_FONT_NAME, 0);
+    lv_obj_set_style_text_color(unitLabel, lv_color_hex(UI_COLOR_TEXT_DIM), 0);
+    // Bring the unit's baseline level with the value's baseline
+    lv_obj_set_style_pad_bottom(unitLabel, UI_FONT_HERO_BIG->base_line - UI_FONT_NAME->base_line, 0);
     lv_label_set_text(unitLabel, entities[entityIndex].sensorUnit.c_str());
-    lv_obj_add_style(unitLabel, &style_sensor_unit, 0);
-    lv_obj_align_to(unitLabel, valueLabel, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
-    
+
     entities[entityIndex].wValue = valueLabel;
     entities[entityIndex].wUnit = unitLabel;
 }
@@ -366,13 +427,13 @@ void createFanTile(int entityIndex) {
     lv_obj_t* title = lv_label_create(tile);
     lv_label_set_text(title, entities[entityIndex].name.c_str());
     lv_obj_add_style(title, &style_title, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
     
     // Icon
     lv_obj_t* icon = lv_label_create(tile);
     lv_label_set_text(icon, uiIconGlyph("mdi:fan"));
     lv_obj_add_style(icon, &style_icon_mdi, 0);
-    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 40);
+    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 50);
     
     // Speed slider
     lv_obj_t* speed_slider = lv_slider_create(tile);
@@ -386,7 +447,7 @@ void createFanTile(int entityIndex) {
     lv_obj_t* speed_label = lv_label_create(tile);
     lv_label_set_text_fmt(speed_label, "%d%%", entities[entityIndex].fanSpeed);
     lv_obj_add_style(speed_label, &style_value_small, 0);
-    lv_obj_align(speed_label, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_align(speed_label, LV_ALIGN_BOTTOM_MID, 0, -50);
     
     entities[entityIndex].wControl = speed_slider;
     entities[entityIndex].wValue = speed_label;
@@ -438,10 +499,7 @@ void updateEntityTile(int entityIndex) {
     switch (entity.type) {
         case ENTITY_TOGGLE: {
             if (entity.state != entity.lastState && !userHoldsControl(entityIndex)) {
-                if (entity.wControl) {
-                    if (entity.state) lv_obj_add_state(entity.wControl, LV_STATE_CHECKED);
-                    else lv_obj_clear_state(entity.wControl, LV_STATE_CHECKED);
-                }
+                applyToggleState(entityIndex, entity.state);
                 entity.lastState = entity.state;
             }
             break;
@@ -498,11 +556,8 @@ void updateEntityTile(int entityIndex) {
         }
         case ENTITY_SENSOR: {
             if (entity.sensorValue != entity.lastSensorValue) {
-                if (entity.wValue) lv_label_set_text(entity.wValue, entity.sensorValue.c_str());
-                if (entity.wUnit) {
-                    lv_label_set_text(entity.wUnit, entity.sensorUnit.c_str());
-                    if (entity.wValue) lv_obj_align_to(entity.wUnit, entity.wValue, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
-                }
+                if (entity.wValue) setHeroText(entity.wValue, entity.sensorValue.c_str());
+                if (entity.wUnit) setLineText(entity.wUnit, entity.sensorUnit.c_str());
                 entity.lastSensorValue = entity.sensorValue;
             }
             break;

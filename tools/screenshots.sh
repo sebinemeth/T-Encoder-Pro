@@ -12,7 +12,7 @@ magick -size 390x390 xc:black -fill white -draw "circle 195,195 195,0" "$MASK"
 
 shot() { # name query
     curl -s "http://$IP/tile?$2" >/dev/null
-    sleep 1
+    sleep 2
     curl -s "http://$IP/screenshot.bmp" -o "$OUT/$1.bmp"
     magick "$OUT/$1.bmp" "$MASK" -alpha off -compose multiply -composite "$OUT/$1.png"
     rm "$OUT/$1.bmp"

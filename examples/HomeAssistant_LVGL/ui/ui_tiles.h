@@ -7,6 +7,7 @@
 void uiCreateStyles();
 void createEntityTile(int entityIndex, lv_obj_t* tileview);
 void updateEntityTile(int entityIndex);
+void uiSetToggleState(int entityIndex, bool on);  // visual + text, for encoder presses
 
 // Provided by the sketch
 void handleEntityAction(int entityIndex, String action, String value = "", unsigned long debounceMs = 0);
