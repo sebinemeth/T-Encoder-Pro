@@ -13,6 +13,7 @@
 #include "port/lv_port_disp.h"
 #include "port/lv_port_indev.h"
 #include "port/encoder.h"
+#include "port/screenshot.h"
 #include "pin_config.h"
 #include "ha_config.h"
 #if __has_include("ha_config_private.h")
@@ -813,6 +814,7 @@ void serviceWiFi() {
             connectionEstablished = true;
             Serial.print("WiFi connected, IP address: ");
             Serial.println(WiFi.localIP());
+            screenshotBegin();
             updateWiFiOverlayStatus("WiFi Connected!");
             wifiOverlayHideAt = now + 1000;
         }
@@ -1193,6 +1195,7 @@ void loop() {
     
     // WiFi supervision (non-blocking)
     serviceWiFi();
+    screenshotLoop();
     
     if (WiFi.status() == WL_CONNECTED) {
         // Process WebSocket events and REST fallback

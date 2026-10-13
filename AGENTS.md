@@ -50,7 +50,7 @@ History so far: upstream added the CO5300 + CST816 variant, renamed `LCD_*` to `
 - **Input model** (`port/encoder.*` + `handleEncoderInput()` in the sketch): one interrupt-driven decoder, one detent per click (clockwise positive). Rotation switches tile. Short press: toggles a light/switch, or enters edit mode on cover, thermostat and fan tiles (knob then changes the value, 5 s idle or another press exits; touching or swiping also exits). Long press (600 ms): stops a cover. Touch works in parallel. There is no LVGL encoder indev or focus group.
 - **Never block `loop()`**: no long `delay`, no blocking WiFi or HTTP. All LVGL calls stay on the main task.
 - **Round display**: keep content inside the inscribed circle; avoid magic pixel offsets.
-- **Memory**: `LV_MEM_SIZE` is 48K; avoid per-message `String` and `DynamicJsonDocument` churn; PSRAM is available.
+- **Memory**: `LV_MEM_SIZE` is 48K; avoid per-message `String` and `DynamicJsonDocument` churn; PSRAM is **not usable** on the owner's unit: with `BOARD_HAS_PSRAM` the boot log shows `PSRAM ID read error` in both `qio_opi` and `qio_qspi` modes, so it is left off and free PSRAM reads 0.
 - **Secrets**: WiFi and HA token go in `ha_config_private.h` (gitignored). Never print the token on Serial.
 - **Build**: `venv/bin/pio run` (single env `HomeAssistant_LVGL`). Upload with `-t upload --upload-port /dev/cu.usbmodem*`. The ESP32-S3 appears as "USB JTAG/serial debug unit" (VID 303A).
 - **Tests**: `pio test -e native` runs host-side Unity tests (`test/test_logic`). Keep logic that can be tested without hardware in the Arduino-free headers `app_logic.h`, `service_call.h` and `port/encoder_decoder.h`, and add tests when changing it.
@@ -63,6 +63,7 @@ History so far: upstream added the CO5300 + CST816 variant, renamed `LCD_*` to `
 - **Entity types**: switch, light, input_boolean, cover (plus the thermostat and fan tiles described above).
 - **Hybrid transport** (`ha_websocket_manager_v2.h`): REST fetches initial state and polls every 15 s only while the WebSocket is not ready; the WebSocket (`/api/websocket`, bearer token auth) delivers real-time `state_changed` events and carries commands. Service calls map to `/api/services/{domain}/{service}` (e.g. `turn_on`, `toggle`, `open_cover`, `close_cover`, `stop_cover`).
 - **Optimistic UI**: the tile updates immediately, the call runs in the background, and the state is reverted if the call fails. API calls and WebSocket events are processed from the main loop, never blocking.
+- **Screenshots**: `port/screenshot.*` serves `GET http://<device-ip>/screenshot.bmp` (24-bit BMP of the active LVGL screen, unauthenticated, LAN debugging only; disable with `-D ENABLE_SCREENSHOT_SERVER=0`). The IP is printed on Serial (`Screenshot: http://...`). It renders in 26-row strips because the full frame does not fit in RAM. Convert for viewing with `sips -s format png shot.bmp --out shot.png`. Needs `LV_USE_SNAPSHOT 1` in `lv_conf.h`.
 - **Serial monitor**: `venv/bin/pio device monitor --baud 115200`.
 
 ### WebSocket troubleshooting
