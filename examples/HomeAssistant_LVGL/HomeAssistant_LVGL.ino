@@ -67,6 +67,8 @@ lv_style_t style_title;
 lv_style_t style_icon;
 lv_style_t style_value_large;
 lv_style_t style_value_small;
+lv_style_t style_sensor_value;  // Very large font for sensor values
+lv_style_t style_sensor_unit;   // Large font for sensor units
 lv_style_t style_button;
 lv_style_t style_slider;
 
@@ -112,13 +114,17 @@ void initializeEntities() {
                 break;
             case ENTITY_THERMOSTAT:
                 entities[i].currentTemp = 20.0;
+                entities[i].lastCurrentTemp = 20.0;
                 entities[i].targetTemp = 21.0;
                 entities[i].lastTargetTemp = 20.0;
+                entities[i].minTemp = 4.0;  // Default minimum temperature
+                entities[i].maxTemp = 35.0; // Default maximum temperature
                 entities[i].hvacMode = "off";
                 entities[i].hvacAction = "idle";
                 break;
             case ENTITY_SENSOR:
                 entities[i].sensorValue = "N/A";
+                entities[i].lastSensorValue = "";
                 entities[i].sensorUnit = "";
                 break;
             case ENTITY_FAN:
@@ -209,6 +215,16 @@ void createStyles() {
     lv_style_init(&style_value_small);
     lv_style_set_text_color(&style_value_small, lv_color_hex(0xCCCCCC));
     lv_style_set_text_font(&style_value_small, &lv_font_montserrat_14);
+    
+    // Very large sensor value style (use largest available font)
+    lv_style_init(&style_sensor_value);
+    lv_style_set_text_color(&style_sensor_value, lv_color_white());
+    lv_style_set_text_font(&style_sensor_value, &lv_font_montserrat_26);
+    
+    // Large sensor unit style (use largest available smaller font)
+    lv_style_init(&style_sensor_unit);
+    lv_style_set_text_color(&style_sensor_unit, lv_color_hex(0x888888));
+    lv_style_set_text_font(&style_sensor_unit, &lv_font_montserrat_18);
     
     // Button style
     lv_style_init(&style_button);
@@ -405,6 +421,49 @@ void createCoverTile(int entityIndex) {
     lv_obj_set_user_data(tile, slider);
 }
 
+// Event handler for thermostat arc
+static void thermostat_arc_event_handler(lv_event_t * e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_VALUE_CHANGED) {
+        lv_obj_t * arc = lv_event_get_target(e);
+        int entityIndex = (int)(uintptr_t)lv_event_get_user_data(e);
+        int arc_value = lv_arc_get_value(arc);
+        
+        // Convert arc value (0-100) to temperature using entity's dynamic min/max range
+        float tempRange = entities[entityIndex].maxTemp - entities[entityIndex].minTemp;
+        float target_temp = entities[entityIndex].minTemp + (arc_value / 100.0) * tempRange;
+        entities[entityIndex].targetTemp = target_temp;
+        
+        Serial.println("Thermostat target temp changed to: " + String(target_temp, 1) + "°C (range: " + 
+                      String(entities[entityIndex].minTemp, 1) + "-" + String(entities[entityIndex].maxTemp, 1) + "°C)");
+        
+        // Update target temperature display immediately for responsiveness
+        lv_obj_t* tile = entities[entityIndex].tile;
+        if (tile) {
+            // Find target temp label (3rd label after title, current temp)
+            uint32_t childCount = lv_obj_get_child_cnt(tile);
+            int labelCount = 0;
+            for (uint32_t i = 0; i < childCount; i++) {
+                lv_obj_t* child = lv_obj_get_child(tile, i);
+                if (child && lv_obj_check_type(child, &lv_label_class)) {
+                    labelCount++;
+                    if (labelCount == 1) { // Title - skip
+                        continue;
+                    } else if (labelCount == 2) { // Current temp - skip
+                        continue;
+                    } else if (labelCount == 3) { // Target temp label
+                        lv_label_set_text_fmt(child, "%.1f°C", target_temp);
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Send temperature change to Home Assistant
+        handleEntityAction(entityIndex, "set_temperature", String(target_temp, 1));
+    }
+}
+
 // Create UI for thermostat entities
 void createThermostatTile(int entityIndex) {
     lv_obj_t* tile = entities[entityIndex].tile;
@@ -415,29 +474,48 @@ void createThermostatTile(int entityIndex) {
     lv_obj_add_style(title, &style_title, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
     
-    // Icon
-    lv_obj_t* icon = lv_label_create(tile);
-    lv_label_set_text(icon, LV_SYMBOL_LOOP);
-    lv_obj_add_style(icon, &style_icon, 0);
-    lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 40);
-    
-    // Current temperature
+    // Current temperature - large display at top center
     lv_obj_t* current_temp = lv_label_create(tile);
-    lv_label_set_text(current_temp, "20.0°C");
-    lv_obj_add_style(current_temp, &style_value_large, 0);
-    lv_obj_align(current_temp, LV_ALIGN_CENTER, 0, -20);
+    lv_label_set_text_fmt(current_temp, "%.1f°C", entities[entityIndex].currentTemp);
+    lv_obj_add_style(current_temp, &style_sensor_value, 0);
+    lv_obj_align(current_temp, LV_ALIGN_CENTER, 0, -80);
     
-    // Target temperature slider
-    lv_obj_t* temp_slider = lv_slider_create(tile);
-    lv_obj_set_size(temp_slider, 200, 20);
-    lv_slider_set_range(temp_slider, 10, 30); // 10-30°C range
-    lv_obj_align(temp_slider, LV_ALIGN_CENTER, 0, 20);
+    // Target temperature - smaller display in center of arc
+    lv_obj_t* target_temp = lv_label_create(tile);
+    lv_label_set_text_fmt(target_temp, "Target: %.1f°C", entities[entityIndex].targetTemp);
+    lv_obj_add_style(target_temp, &style_sensor_unit, 0);
+    lv_obj_align(target_temp, LV_ALIGN_CENTER, 0, 0);
     
-    // HVAC mode/action status
+    // Arc for temperature control - larger size to avoid overlap
+    lv_obj_t* temp_arc = lv_arc_create(tile);
+    lv_obj_set_size(temp_arc, 240, 240);
+    lv_arc_set_range(temp_arc, 0, 100); // 0-100 maps to 10-30°C
+    
+    // Set initial arc value based on target temperature using dynamic range
+    float tempRange = entities[entityIndex].maxTemp - entities[entityIndex].minTemp;
+    int arc_value = (int)((entities[entityIndex].targetTemp - entities[entityIndex].minTemp) / tempRange * 100.0);
+    // Clamp to valid range
+    arc_value = (arc_value < 0) ? 0 : ((arc_value > 100) ? 100 : arc_value);
+    lv_arc_set_value(temp_arc, arc_value);
+    
+    lv_obj_align(temp_arc, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_event_cb(temp_arc, thermostat_arc_event_handler, LV_EVENT_VALUE_CHANGED, (void*)(uintptr_t)entityIndex);
+    
+    // Style the arc
+    lv_obj_set_style_arc_color(temp_arc, lv_color_hex(0x666666), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(temp_arc, lv_color_hex(0xFF6B35), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(temp_arc, lv_color_hex(0x4CAF50), LV_PART_KNOB);
+    lv_obj_set_style_border_color(temp_arc, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_border_width(temp_arc, 2, LV_PART_KNOB);
+    
+    // HVAC mode/action status - small text at bottom
     lv_obj_t* status = lv_label_create(tile);
-    lv_label_set_text(status, "Off");
+    lv_label_set_text(status, entities[entityIndex].hvacMode.c_str());
     lv_obj_add_style(status, &style_value_small, 0);
     lv_obj_align(status, LV_ALIGN_BOTTOM_MID, 0, -10);
+    
+    // Store arc reference for updates
+    lv_obj_set_user_data(tile, temp_arc);
 }
 
 // Create UI for sensor entities
@@ -450,23 +528,27 @@ void createSensorTile(int entityIndex) {
     lv_obj_add_style(title, &style_title, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
     
-    // Icon
+    // Icon - moved higher to make room for larger value
     lv_obj_t* icon = lv_label_create(tile);
-    lv_label_set_text(icon, LV_SYMBOL_CHARGE);
+    String symbol = getDisplaySymbol(entities[entityIndex].icon);
+    lv_label_set_text(icon, symbol.c_str());
     lv_obj_add_style(icon, &style_icon, 0);
-    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -40);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -80);
     
-    // Sensor value
-    lv_obj_t* value = lv_label_create(tile);
-    lv_label_set_text(value, "N/A");
-    lv_obj_add_style(value, &style_value_large, 0);
-    lv_obj_align(value, LV_ALIGN_CENTER, 0, 20);
+    // Very large sensor value label
+    lv_obj_t* valueLabel = lv_label_create(tile);
+    lv_label_set_text(valueLabel, entities[entityIndex].sensorValue.c_str());
+    lv_obj_add_style(valueLabel, &style_sensor_value, 0);
+    lv_obj_align(valueLabel, LV_ALIGN_CENTER, 0, 0);
     
-    // Unit
-    lv_obj_t* unit = lv_label_create(tile);
-    lv_label_set_text(unit, "");
-    lv_obj_add_style(unit, &style_value_small, 0);
-    lv_obj_align(unit, LV_ALIGN_BOTTOM_MID, 0, -10);
+    // Large sensor unit label positioned next to value
+    lv_obj_t* unitLabel = lv_label_create(tile);
+    lv_label_set_text(unitLabel, entities[entityIndex].sensorUnit.c_str());
+    lv_obj_add_style(unitLabel, &style_sensor_unit, 0);
+    lv_obj_align_to(unitLabel, valueLabel, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
+    
+    // Store value label reference for updates (unit will be found by position)
+    lv_obj_set_user_data(tile, valueLabel);
 }
 
 // Create UI for fan entities
@@ -775,6 +857,13 @@ bool fetchEntityState(int entityIndex) {
                         entities[entityIndex].lastTargetTemp = -1; // Force UI update
                     }
                 }
+                // Parse min/max temperature ranges from HA
+                if (doc["attributes"]["min_temp"].is<float>()) {
+                    entities[entityIndex].minTemp = doc["attributes"]["min_temp"];
+                }
+                if (doc["attributes"]["max_temp"].is<float>()) {
+                    entities[entityIndex].maxTemp = doc["attributes"]["max_temp"];
+                }
                 entities[entityIndex].hvacMode = doc["attributes"]["hvac_mode"] | "off";
                 entities[entityIndex].hvacAction = doc["attributes"]["hvac_action"] | "idle";
                 break;
@@ -882,6 +971,10 @@ void processAPIRequest() {
             service = "set_percentage";
         }
         serviceUrl = String(HA_URL) + "api/services/fan/" + service;
+    } else if (pendingRequestType == "set_temperature") {
+        domain = "climate";
+        service = "set_temperature";
+        serviceUrl = String(HA_URL) + "api/services/climate/" + service;
     } else {
         lastError = "Unknown request type: " + pendingRequestType;
         pendingRequest = false;
@@ -902,6 +995,8 @@ void processAPIRequest() {
         doc["position"] = pendingRequestValue.toInt();
     } else if (pendingRequestType == "fan_set_speed") {
         doc["percentage"] = pendingRequestValue.toInt();
+    } else if (pendingRequestType == "set_temperature") {
+        doc["temperature"] = pendingRequestValue.toFloat();
     }
     
     String jsonString;
@@ -987,13 +1082,120 @@ void updateEntityTile(int entityIndex) {
             break;
         }
         case ENTITY_THERMOSTAT: {
-            // Update temperature displays - simplified for compatibility
-            Serial.println("Thermostat temperature: " + String(entity.currentTemp, 1) + "°C");
+            // Update current temperature display
+            if (abs(entity.currentTemp - entity.lastCurrentTemp) > 0.1) {
+                Serial.println("Thermostat current temp updated to: " + String(entity.currentTemp, 1) + "°C");
+                
+                // Find and update current temp label (1st label after title)
+                uint32_t childCount = lv_obj_get_child_cnt(tile);
+                int labelCount = 0;
+                for (uint32_t i = 0; i < childCount; i++) {
+                    lv_obj_t* child = lv_obj_get_child(tile, i);
+                    if (child && lv_obj_check_type(child, &lv_label_class)) {
+                        labelCount++;
+                        if (labelCount == 1) { // Title - skip
+                            continue;
+                        } else if (labelCount == 2) { // Current temp label
+                            lv_label_set_text_fmt(child, "%.1f°C", entity.currentTemp);
+                            break;
+                        }
+                    }
+                }
+                entity.lastCurrentTemp = entity.currentTemp;
+            }
+            
+            // Update target temperature display and arc position
+            if (abs(entity.targetTemp - entity.lastTargetTemp) > 0.1) {
+                Serial.println("Thermostat target temp updated to: " + String(entity.targetTemp, 1) + "°C");
+                
+                // Update target temperature label (3rd label after title)
+                uint32_t childCount = lv_obj_get_child_cnt(tile);
+                int labelCount = 0;
+                for (uint32_t i = 0; i < childCount; i++) {
+                    lv_obj_t* child = lv_obj_get_child(tile, i);
+                    if (child && lv_obj_check_type(child, &lv_label_class)) {
+                        labelCount++;
+                        if (labelCount == 1) { // Title - skip
+                            continue;
+                        } else if (labelCount == 2) { // Current temp - skip
+                            continue;
+                        } else if (labelCount == 3) { // Target temp label
+                            lv_label_set_text_fmt(child, "Target: %.1f°C", entity.targetTemp);
+                            break;
+                        }
+                    }
+                }
+                
+                // Update arc position to match target temperature
+                lv_obj_t* arc = (lv_obj_t*)lv_obj_get_user_data(tile);
+                if (arc && lv_obj_check_type(arc, &lv_arc_class)) {
+                    // Convert temperature (10-30°C) to arc value (0-100)
+                    int arc_value = (int)((entity.targetTemp - 10.0) / 20.0 * 100.0);
+                    // Clamp to valid range
+                    arc_value = (arc_value < 0) ? 0 : ((arc_value > 100) ? 100 : arc_value);
+                    lv_arc_set_value(arc, arc_value);
+                }
+                
+                entity.lastTargetTemp = entity.targetTemp;
+            }
+            
+            // Update HVAC status display
+            lv_obj_t* statusLabel = nullptr;
+            uint32_t childCount = lv_obj_get_child_cnt(tile);
+            int labelCount = 0;
+            for (uint32_t i = 0; i < childCount; i++) {
+                lv_obj_t* child = lv_obj_get_child(tile, i);
+                if (child && lv_obj_check_type(child, &lv_label_class)) {
+                    labelCount++;
+                    if (labelCount == 4) { // Status label (4th label)
+                        statusLabel = child;
+                        break;
+                    }
+                }
+            }
+            if (statusLabel) {
+                String statusText = entity.hvacMode;
+                if (entity.hvacAction != "idle" && entity.hvacAction != entity.hvacMode) {
+                    statusText += " (" + entity.hvacAction + ")";
+                }
+                lv_label_set_text(statusLabel, statusText.c_str());
+            }
+            
             break;
         }
         case ENTITY_SENSOR: {
-            // Update sensor value - simplified for compatibility
-            Serial.println("Sensor value: " + entity.sensorValue + " " + entity.sensorUnit);
+            // Update separate sensor value and unit labels
+            if (entity.sensorValue != entity.lastSensorValue) {
+                lv_obj_t* valueLabel = (lv_obj_t*)lv_obj_get_user_data(tile);
+                if (valueLabel) {
+                    // Update the large sensor value
+                    lv_label_set_text(valueLabel, entity.sensorValue.c_str());
+                    
+                    // Find and update the unit label - simple approach by checking label count
+                    uint32_t childCount = lv_obj_get_child_cnt(tile);
+                    lv_obj_t* unitLabel = nullptr;
+                    int labelCount = 0;
+                    for (uint32_t i = 0; i < childCount; i++) {
+                        lv_obj_t* child = lv_obj_get_child(tile, i);
+                        if (child && lv_obj_check_type(child, &lv_label_class)) {
+                            labelCount++;
+                            // The unit label is typically the 4th label (after title, icon, value)
+                            if (labelCount >= 4 && child != valueLabel) {
+                                unitLabel = child;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (unitLabel) {
+                        lv_label_set_text(unitLabel, entity.sensorUnit.c_str());
+                        // Re-position unit label next to updated value label
+                        lv_obj_align_to(unitLabel, valueLabel, LV_ALIGN_OUT_RIGHT_MID, 5, 0);
+                    }
+                }
+                Serial.println("Sensor value updated: " + entity.sensorValue + " " + entity.sensorUnit);
+                entity.lastSensorValue = entity.sensorValue;
+            }
             break;
         }
         case ENTITY_FAN: {

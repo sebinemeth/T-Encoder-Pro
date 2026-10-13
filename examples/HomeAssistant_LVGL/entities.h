@@ -30,8 +30,11 @@ struct HAEntity {
     
     // Thermostat entity fields
     float currentTemp;     // Current temperature
+    float lastCurrentTemp; // Previous current temperature for UI updates
     float targetTemp;      // Target temperature
     float lastTargetTemp;  // Previous target temperature for UI updates
+    float minTemp;         // Minimum temperature range from HA
+    float maxTemp;         // Maximum temperature range from HA
     String hvacMode;       // HVAC mode: "off", "heat", "cool", "auto", "heat_cool"
     String hvacAction;     // Current action: "idle", "heating", "cooling"
     
@@ -41,6 +44,7 @@ struct HAEntity {
     
     // Sensor entity fields
     String sensorValue;    // Current sensor value
+    String lastSensorValue;// Previous sensor value for UI updates
     String sensorUnit;     // Sensor unit of measurement
     
     // Common fields
@@ -87,8 +91,8 @@ const int ENTITY_COUNT = 4;
 
 HAEntity entities[ENTITY_COUNT] = {
     // Basic initialization - extended fields are set automatically in initializeEntities()
-    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false},
-    {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "mdi:blinds", false, nullptr, false},
-    {"Living Room Thermostat", "climate.living_room", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false},
-    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", false, nullptr, false}
+    {"Desk Lamp", "light.desk_lamp", ENTITY_TOGGLE, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false},
+    {"Office Cover", "cover.office_left_cover", ENTITY_COVER, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "mdi:blinds", false, nullptr, false},
+    {"Bedroom Radiator", "climate.bedroom_radiator", ENTITY_THERMOSTAT, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false},
+    {"Temperature Sensor", "sensor.living_room_th_temperature", ENTITY_SENSOR, false, false, 0, 0, "", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "", 0, 0, "", "", "", "", false, nullptr, false}
 };
