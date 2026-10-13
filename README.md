@@ -10,7 +10,7 @@ Based on LilyGO's T-Encoder-Pro examples (GPL-3.0). See [AGENTS.md](AGENTS.md) f
 2. Edit the entity list in `examples/HomeAssistant_LVGL/entities.h`.
 3. `pio run -t upload` (PlatformIO). Select the board variant in `libraries/Mylibrary/pin_config.h` (default `DXQ120MYB2416A`).
 
-More: `examples/HomeAssistant_LVGL/README.md`, `WARP.md` (WebSocket troubleshooting).
+More: `examples/HomeAssistant_LVGL/README.md`, `AGENTS.md` (WebSocket troubleshooting).
 
 ## License
 

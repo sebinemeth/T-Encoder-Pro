@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Home Assistant controller firmware for the LilyGO T-Encoder-Pro (ESP32-S3, round AMOLED, rotary encoder).
-This repo started as a fork of [Xinyuan-LilyGO/T-Encoder-Pro](https://github.com/Xinyuan-LilyGO/T-Encoder-Pro) (GPL-3.0, keep `LICENSE` and credit upstream). The app lives in `examples/HomeAssistant_LVGL`. See `WARP.md` for build and WebSocket troubleshooting until it is merged here.
+This repo started as a fork of [Xinyuan-LilyGO/T-Encoder-Pro](https://github.com/Xinyuan-LilyGO/T-Encoder-Pro) (GPL-3.0, keep `LICENSE` and credit upstream). The app lives in `examples/HomeAssistant_LVGL`. The project was previously worked on with the WARP terminal agent (`WARP.md`, since removed and merged here; `@Author: WARP` in some file headers is a leftover of that).
 
 ## Hardware (verified)
 
@@ -56,3 +56,17 @@ History so far: upstream added the CO5300 + CST816 variant, renamed `LCD_*` to `
 - **Tests**: `pio test -e native` runs host-side Unity tests (`test/test_logic`). Keep logic that can be tested without hardware in the Arduino-free headers `app_logic.h`, `service_call.h` and `port/encoder_decoder.h`, and add tests when changing it.
 - **CI** (`.github/workflows`): `ci.yml` runs the unit tests and builds the firmware on every push and PR (the CI binary has placeholder credentials, build check only). `upstream-check.yml` runs weekly and opens an "Upstream changes to review" issue when LilyGO changes files that matter here (see "Regularly check upstream").
 - **Formatting**: `.clang-format` is provided for new and edited files; it is not enforced and existing files are not reformatted wholesale.
+
+## Home Assistant integration
+
+- **Config files** (in `examples/HomeAssistant_LVGL`): `ha_config.h` holds safe placeholder defaults, `ha_config_private.h` (gitignored, template `ha_config_private.h.example`) overrides them with real WiFi and HA values, `entities.h` holds the static entity list (name, entity_id, type), `ha_websocket_config.h` holds WebSocket tuning. Never commit real credentials; keep them only in gitignored files.
+- **Entity types**: switch, light, input_boolean, cover (plus the thermostat and fan tiles described above).
+- **Hybrid transport** (`ha_websocket_manager_v2.h`): REST fetches initial state and polls every 15 s only while the WebSocket is not ready; the WebSocket (`/api/websocket`, bearer token auth) delivers real-time `state_changed` events and carries commands. Service calls map to `/api/services/{domain}/{service}` (e.g. `turn_on`, `toggle`, `open_cover`, `close_cover`, `stop_cover`).
+- **Optimistic UI**: the tile updates immediately, the call runs in the background, and the state is reverted if the call fails. API calls and WebSocket events are processed from the main loop, never blocking.
+- **Serial monitor**: `venv/bin/pio device monitor --baud 115200`.
+
+### WebSocket troubleshooting
+
+- **Buffer size**: `WS_MAX_MESSAGE_SIZE` is 16384 bytes in `ha_websocket_config.h`. `state_changed` events with full attributes can exceed 1 KB, and larger messages than the limit are dropped. The log prints usage like `memory usage: 1117/16384 bytes`.
+- **ArduinoJson type checks**: `is<JsonObject>()` can wrongly fail on valid objects reached through a `JsonVariantConst` (symptom: JSON parses fine but logs "event is not an object"). Use `containsKey()` or direct access instead of `is<JsonObject>()` for existence checks. This is already applied in `ha_websocket_manager_v2.h`; do not reintroduce strict type checks there.
+- **Log markers to look for** when events seem lost: `[WS] JSON parsed successfully`, `[WS] Event type: state_changed`, `[WS] State changed for entity: <id>`, `[WS] MATCH! Processing entity <n>`. The first one missing tells you which stage fails (parse, event routing, entity extraction, entity match).
