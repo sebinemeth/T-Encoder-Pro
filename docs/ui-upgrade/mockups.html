@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T-Encoder UI Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* device tokens, see docs/PLAN_ui_upgrade.md */
+    --bg: #000000;
+    --surface: #16181B;
+    --text: #E6E6E6;
+    --text-dim: #8A8F98;
+    --inactive: #4A4F57;
+    --light: #FFB300;
+    --heat: #FF7A1A;
+    --cool: #3FA7FF;
+    --cover: #42A5F5;
+    --ok: #4CAF50;
+    --error: #E5484D;
+    /* page chrome */
+    --page: #0d0e10;
+    --page-text: #d7d9dd;
+    --page-dim: #8b9099;
+    --rule: #23262b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--page-text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1180px; margin: 0 auto; padding: 48px 16px 80px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 56px 0 4px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  p.lead { color: var(--page-dim); max-width: 70ch; margin: 0 0 8px; }
+  p.note { color: var(--page-dim); max-width: 70ch; margin: 0 0 20px; font-size: 14px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 28px 20px; margin-top: 20px; }
+  figure { margin: 0; text-align: center; }
+  figcaption { margin-top: 10px; font-size: 13px; color: var(--page-dim); }
+  figcaption b { display: block; color: var(--page-text); font-weight: 600; font-size: 14px; }
+
+  /* the physical device: bezel + round glass */
+  .dev {
+    width: min(100%, 300px); aspect-ratio: 1; margin: 0 auto; border-radius: 50%;
+    background: #1b1d21; padding: 5%; position: relative;
+    box-shadow: 0 0 0 1px #2a2d33, 0 10px 30px rgba(0,0,0,.6);
+  }
+  .dev > .glass, .dev > img.glass {
+    display: block; width: 100%; height: 100%; border-radius: 50%; background: #000; overflow: hidden;
+  }
+  .dev svg { display: block; width: 100%; height: 100%; }
+  .dev.click { cursor: pointer; }
+  .dev.click:focus-visible { outline: 2px solid var(--cool); outline-offset: 4px; }
+
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .tag { display: inline-block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--page-dim); margin-bottom: 8px; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 16px; }
+  .sw { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .sw i { width: 28px; height: 28px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); }
+  .sw code { color: var(--page-dim); font-size: 12px; }
+  .sw span { display: block; line-height: 1.25; }
+
+  .dim svg { opacity: .28; }
+  @media (max-width: 560px) { .pair { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>T-Encoder UI mockups</h1>
+  <p class="lead">Proposed dark, AMOLED-first design for the 390&times;390 round panel. Pure black background, state-colored accents, one idea per screen. These are SVG renderings of the layouts in <code>PLAN_ui_upgrade.md</code>, not device captures.</p>
+  <p class="note">The first light tile under <i>All tiles</i> is clickable: tap the disc to toggle it, as touch (or an encoder press) does on the device.</p>
+
+  <h2>Before and after</h2>
+  <p class="note">Left: current firmware (captured with the screenshot server, masked round). Right: proposed.</p>
+  <div class="grid" id="compare"></div>
+
+  <h2>All tiles</h2>
+  <div class="grid" id="tiles"></div>
+
+  <h2>Edit mode</h2>
+  <p class="note">Entered with an encoder press on cover, thermostat and fan. The ring thickens and the value being edited takes the accent color (the hero is already 56 px, so its size does not change). Today it only adds a knob ring.</p>
+  <div class="grid" id="edit"></div>
+
+  <h2>Page indicator</h2>
+  <p class="note">Dots follow the bottom bezel up to 12 entities. Beyond that they would crowd the cover buttons and the toast, so they are replaced by an <code>n / N</code> caption in the same place.</p>
+  <div class="grid" id="indicator"></div>
+
+  <h2>System states</h2>
+  <div class="grid" id="states"></div>
+
+  <h2>AMOLED idle dimming</h2>
+  <p class="note">After a period without input the panel fades to a low brightness (here about 28%) so static shapes burn less. Any encoder or touch input restores it.</p>
+  <div class="grid" id="dim"></div>
+
+  <h2>Palette</h2>
+  <div class="swatches" id="swatches"></div>
+</main>
+
+<script>
+const C = {
+  bg:'#000000', surface:'#16181B', text:'#E6E6E6', dim:'#8A8F98', inactive:'#4A4F57',
+  light:'#FFB300', heat:'#FF7A1A', cool:'#3FA7FF', cover:'#42A5F5', ok:'#4CAF50', error:'#E5484D'
+};
+const CX = 195, CY = 195, FONT = "Montserrat, system-ui, sans-serif";
+
+// ---- geometry: 270-degree ring, gap at the bottom (angles: 0 = east, clockwise) ----
+const A0 = 135, SWEEP = 270;
+const pt = (r, a) => [CX + r * Math.cos(a * Math.PI / 180), CY + r * Math.sin(a * Math.PI / 180)];
+function arcPath(r, from, to) {
+  const [x1, y1] = pt(r, from), [x2, y2] = pt(r, to);
+  return `M${x1.toFixed(2)} ${y1.toFixed(2)} A${r} ${r} 0 ${(to - from) > 180 ? 1 : 0} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+const at = v => A0 + SWEEP * Math.max(0, Math.min(1, v));
+
+function ring({ r = 175, w = 12, v, color, knob = 0, tick, tickColor = C.heat, track = C.surface }) {
+  let s = `<path d="${arcPath(r, A0, A0 + SWEEP)}" stroke="${track}" stroke-width="${w}" fill="none" stroke-linecap="round"/>`;
+  if (v > 0) s += `<path d="${arcPath(r, A0, at(v))}" stroke="${color}" stroke-width="${w}" fill="none" stroke-linecap="round"/>`;
+  if (tick != null) {
+    const a = at(tick), [x1, y1] = pt(r - w / 2 - 4, a), [x2, y2] = pt(r + w / 2 + 4, a);
+    s += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${tickColor}" stroke-width="3" stroke-linecap="round"/>`;
+  }
+  if (knob) { const [x, y] = pt(r, at(v)); s += `<circle cx="${x}" cy="${y}" r="${knob}" fill="${C.text}"/><circle cx="${x}" cy="${y}" r="${knob - 5}" fill="${color}"/>`; }
+  return s;
+}
+const text = (x, y, t, size, fill, weight = 400, anchor = 'middle') =>
+  `<text x="${x}" y="${y}" font-family="${FONT}" font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${t}</text>`;
+
+const DOTS_MAX = 12;
+function dots(n, active) {
+  if (n > DOTS_MAX) return text(CX, 362, `${active + 1} / ${n}`, 14, C.dim, 500);
+  let s = '';
+  for (let i = 0; i < n; i++) {
+    const [x, y] = pt(172, 90 + (i - (n - 1) / 2) * 7);
+    s += `<circle cx="${x}" cy="${y}" r="3" fill="${i === active ? C.dim : '#2A2D32'}"/>`;
+  }
+  return s;
+}
+
+// ---- icons, 24x24 grid scaled to size and centred at (cx, cy) ----
+const ICON = {
+  bulb: `<path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7M9 21a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9z"/>`,
+  blinds: `<path d="M3 3h18v2H3zm1 3h16v2H4zm1 3h14v2H5zm1 3h12v2H6zm1 3h10v2H7zm4 3h2v4h-2zm-1 4h4v1h-4z"/>`,
+  therm: `<path d="M15 13V5a3 3 0 0 0-6 0v8a5 5 0 1 0 6 0m-3-9a1 1 0 0 1 1 1v3h-2V5a1 1 0 0 1 1-1"/>`,
+  toggle: `<path d="M17 7H7a5 5 0 0 0 0 10h10a5 5 0 0 0 0-10M7 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6"/>`,
+  fan: `<circle cx="12" cy="12" r="2"/><g><path d="M12 10C10.5 7 10.5 4 12 2c1.500 2 1.500 5 0 8z"/><path d="M12 10C10.500 7 10.500 4 12 2c1.500 2 1.500 5 0 8z" transform="rotate(120 12 12)"/><path d="M12 10C10.500 7 10.500 4 12 2c1.500 2 1.500 5 0 8z" transform="rotate(240 12 12)"/></g>`,
+  warn: `<path d="M12 2 1 21h22zm1 15h-2v-2h2zm0-4h-2V9h2z"/>`,
+  wifi: `<path d="M12 21 .6 8.700a16 16 0 0 1 22.800 0zM12 17.500l7-7.500a12 12 0 0 0-14 0z"/>`,
+  up: `<path d="m7.400 15.400 4.600-4.600 4.600 4.600L18 14l-6-6-6 6z"/>`,
+  down: `<path d="m7.400 8.600 4.600 4.600 4.600-4.600L18 10l-6 6-6-6z"/>`,
+  stop: `<path d="M6 6h12v12H6z"/>`
+};
+const icon = (name, cx, cy, size, fill, extra = '') =>
+  `<g transform="translate(${cx - size / 2} ${cy - size / 2}) scale(${size / 24})" fill="${fill}" ${extra}>${ICON[name]}</g>`;
+
+const svg = (inner, bg = C.bg) =>
+  `<svg viewBox="0 0 390 390" xmlns="http://www.w3.org/2000/svg" role="img"><rect width="390" height="390" fill="${bg}"/>${inner}</svg>`;
+
+// ---- tiles ----
+function toggleTile({ name, on, ic = 'bulb', state, n = 6, idx = 0, bri, edit = false }) {
+  const col = on ? C.light : C.inactive;
+  const dimmable = bri != null;
+  const op = on ? (dimmable ? 0.10 + 0.20 * bri : 0.14) : 0;   // disc follows brightness
+  const disc = on
+    ? `<circle cx="${CX}" cy="${CY}" r="64" fill="${C.light}" fill-opacity="${op}" stroke="${C.light}" stroke-opacity=".75" stroke-width="2"/>`
+    : `<circle cx="${CX}" cy="${CY}" r="64" fill="${C.surface}"/>`;
+  const pct = Math.round((bri || 0) * 100);
+  if (edit) {
+    // brightness edit mode: ring thickens, percent becomes the hero, icon shrinks to caption size
+    return svg(
+      ring({ w: 18, v: bri, color: C.light }) +
+      text(CX, 98, name, 18, C.dim, 500) + icon(ic, CX, 142, 34, C.light) +
+      text(CX, 224, pct + '%', 56, C.light, 500) + text(CX, 252, 'Brightness', 14, C.dim, 500) + dots(n, idx));
+  }
+  return svg(
+    (dimmable ? ring({ w: 12, v: on ? bri : 0, color: C.light }) : '') +
+    text(CX, dimmable ? 98 : 74, name, 18, C.dim, 500) + disc + icon(ic, CX, CY, 64, col) +
+    text(CX, dimmable ? 296 : 300, state ?? (on ? (dimmable ? `On · ${pct}%` : 'On') : 'Off'), 14, on ? C.light : C.dim, 500) + dots(n, idx));
+}
+
+function coverTile({ edit = false, pos = .5, target = .8, state = 'Opening' }) {
+  const w = edit ? 18 : 12;
+  const btn = (x, ic, active) =>
+    `<circle cx="${x}" cy="305" r="24" fill="${C.surface}" ${active ? `stroke="${C.cover}" stroke-width="2"` : ''}/>` +
+    icon(ic, x, 305, 26, active ? C.cover : C.dim);
+  return svg(
+    ring({ w, v: pos, color: C.cover, tick: target !== pos ? target : null, tickColor: C.heat }) +
+    text(CX, 98, 'Bedroom Cover', 18, C.dim, 500) +
+    icon('blinds', CX, 142, 34, C.cover) +
+    text(CX, 224, Math.round(pos * 100) + '%', 56, edit ? C.cover : C.text, 500) +
+    text(CX, 252, state, 14, C.cover, 500) +
+    btn(CX - 60, 'up', state === 'Opening') + btn(CX, 'stop', false) + btn(CX + 60, 'down', false) +
+    dots(6, 1));
+}
+
+function thermoTile({ edit = false, cur = 21.8, tgt = 24, min = 5, max = 30, mode = 'heat', state = 'Heating' }) {
+  const col = mode === 'heat' ? C.heat : mode === 'cool' ? C.cool : C.inactive;
+  const v = (tgt - min) / (max - min), vc = (cur - min) / (max - min);
+  return svg(
+    ring({ w: 14, v, color: col, knob: 12, tick: vc, tickColor: C.text }) +
+    text(CX, 98, 'Bedroom Radiator', 18, C.dim, 500) +
+    (edit
+      ? text(CX, 215, tgt.toFixed(1) + '°', 64, col, 500) + text(CX, 250, 'Now ' + cur.toFixed(1) + '°', 14, C.dim, 500)
+      : text(CX, 205, cur.toFixed(1) + '°', 64, C.text, 500) +
+        text(CX, 245, '→ ' + tgt.toFixed(1) + '°', 26, col, 500)) +
+    `<circle cx="${CX - 42}" cy="299" r="4" fill="${col}"/>` + text(CX - 30, 304, state, 14, C.text, 500, 'start') +
+    dots(6, 2));
+}
+
+function sensorTile() {
+  return svg(
+    text(CX, 100, 'Temperature', 18, C.dim, 500) +
+    icon('therm', CX, 150, 40, C.ok) +
+    text(CX - 14, 232, '24.9', 64, C.text, 500) + text(CX + 70, 232, '°C', 22, C.dim, 500, 'start') +
+    text(CX, 290, 'Updated 2 min ago', 14, C.dim, 400) + dots(6, 3));
+}
+
+function fanTile({ edit = false, sp = .6 }) {
+  return svg(
+    ring({ w: edit ? 18 : 12, v: sp, color: C.light }) +
+    text(CX, 98, 'Office Fan', 18, C.dim, 500) +
+    icon('fan', CX, 146, 38, sp > 0 ? C.light : C.inactive) +
+    text(CX, 224, Math.round(sp * 100) + '%', 56, edit ? C.light : C.text, 500) +
+    text(CX, 252, sp > 0 ? 'On' : 'Off', 14, C.dim, 500) + dots(6, 4));
+}
+
+function unavailableTile() {
+  return svg(
+    text(CX, 74, 'Kitchen Switch', 18, C.dim, 500) +
+    `<circle cx="${CX}" cy="${CY}" r="64" fill="${C.surface}" stroke="${C.error}" stroke-opacity=".6" stroke-width="2"/>` +
+    icon('toggle', CX, CY, 64, C.inactive) +
+    text(CX, 300, 'Unavailable', 14, C.error, 500) + dots(6, 5));
+}
+
+function toastTile() {
+  const base = toggleTile({ name: 'Desk Lamp', on: true, idx: 0 }).replace('</svg>', '');
+  return base +
+    `<rect x="${CX - 62}" y="318" width="124" height="32" rx="16" fill="${C.surface}"/>` +
+    text(CX, 339, 'Stopped', 14, C.text, 500) + '</svg>';
+}
+
+function wifiOverlay() {
+  const [x1, y1] = pt(34, 200), [x2, y2] = pt(34, 300);
+  return svg(
+    icon('wifi', CX, 140, 36, C.dim) +
+    `<circle cx="${CX}" cy="${CY + 20}" r="34" fill="none" stroke="${C.surface}" stroke-width="3"/>` +
+    `<path d="M${x1} ${y1 + 20} A34 34 0 0 1 ${x2} ${y2 + 20}" stroke="${C.dim}" stroke-width="3" fill="none" stroke-linecap="round"/>` +
+    text(CX, 300, 'Connecting to WiFi…', 14, C.dim, 500));
+}
+
+function errorTile() {
+  return svg(
+    icon('warn', CX, 150, 40, C.error) +
+    text(CX, 224, 'No connection', 26, C.text, 500) +
+    text(CX, 254, 'Home Assistant unreachable', 14, C.dim, 400) +
+    text(CX, 280, 'Retrying…', 14, C.dim, 400));
+}
+
+// ---- layout helpers ----
+function device(inner, { click, dim } = {}) {
+  return `<div class="dev ${click ? 'click' : ''} ${dim ? 'dim' : ''}" ${click ? 'tabindex="0" role="button" aria-label="Toggle light"' : ''}><div class="glass">${inner}</div></div>`;
+}
+const fig = (inner, title, sub) => `<figure>${inner}<figcaption><b>${title}</b>${sub}</figcaption></figure>`;
+const $ = id => document.getElementById(id);
+
+// before / after
+const cmp = [
+  ['0_light', () => toggleTile({ name: 'Desk Lamp', on: true }), 'Light', 'Large state disc replaces the small blue switch; icon is back.'],
+  ['1_cover', () => coverTile({}), 'Cover', 'Ring replaces the slider, buttons move into the bottom gap.'],
+  ['2_thermostat', () => thermoTile({}), 'Thermostat', 'Ring on the bezel, 64 px hero, accent follows heating.'],
+  ['3_sensor', () => sensorTile(), 'Sensor', 'Bigger value, icon, title out of the clipped zone.'],
+  ['4_fan', () => fanTile({}), 'Fan', 'Same ring language as the cover.']
+];
+$('compare').innerHTML = cmp.map(([img, fn, t, s]) =>
+  `<figure><div class="pair">
+     <div><span class="tag">Now</span><div class="dev"><img class="glass" src="screenshots/${img}.png" alt="Current ${t} tile"></div></div>
+     <div><span class="tag">Proposed</span>${device(fn())}</div>
+   </div><figcaption><b>${t}</b>${s}</figcaption></figure>`).join('');
+$('compare').style.gridTemplateColumns = 'repeat(auto-fill, minmax(420px, 1fr))';
+
+// light tile is interactive
+let lightOn = true;
+function renderLight() {
+  const host = $('lightHost');
+  host.innerHTML = device(toggleTile({ name: 'Desk Lamp', on: lightOn }), { click: true });
+  const d = host.firstElementChild;
+  const flip = () => { lightOn = !lightOn; renderLight(); host.firstElementChild.focus(); };
+  d.onclick = flip; d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+}
+
+$('tiles').innerHTML =
+  [
+    ['__light', 'Light (interactive)', 'Amber when on, dim disc when off. Whole disc is the touch target.'],
+    [toggleTile({ name: 'Kitchen Switch', on: false, ic: 'toggle', idx: 5 }), 'Switch, off', 'Same tile, toggle icon. No ring: not dimmable.'],
+    [toggleTile({ name: 'Desk Lamp', on: true, bri: .4 }), 'Dimmable light, on', 'Ring shows brightness; disc fill follows it. Short press toggles, long press edits.'],
+    [toggleTile({ name: 'Desk Lamp', on: false, bri: .4 }), 'Dimmable light, off', 'Empty ring, last brightness is restored on turn on.'],
+    [coverTile({ pos: 1, target: 1, state: 'Open' }), 'Cover, open', 'No target tick when position equals target.'],
+    [thermoTile({ mode: 'cool', cur: 26.4, tgt: 23, state: 'Cooling' }), 'Thermostat, cooling', 'Blue accent for cooling.'],
+    [thermoTile({ mode: 'off', cur: 19.2, tgt: 21, state: 'Off' }), 'Thermostat, off', 'Grey ring, nothing lit that does not carry meaning.'],
+    [fanTile({ sp: 0 }), 'Fan, off', 'Empty ring, inactive icon.']
+  ].map(([inner, t, s]) => inner === '__light'
+      ? `<figure><span id="lightHost"></span><figcaption><b>${t}</b>${s}</figcaption></figure>`
+      : fig(device(inner), t, s)).join('');
+renderLight();
+
+$('edit').innerHTML = [
+  [coverTile({ edit: true, pos: .65, target: .65, state: 'Editing' }), 'Cover, editing', 'Ring 18 px, value in accent (same 56 px size).'],
+  [thermoTile({ edit: true, tgt: 22.5 }), 'Thermostat, editing', 'Target becomes the hero; current drops to caption.'],
+  [fanTile({ edit: true, sp: .4 }), 'Fan, editing', 'Same treatment as the cover.'],
+  [toggleTile({ name: 'Desk Lamp', on: true, bri: .4, edit: true }), 'Light brightness, editing', 'Entered with a long press (600 ms) on a dimmable light; 5 % per detent.']
+].map(([i, t, s]) => fig(device(i), t, s)).join('');
+
+$('indicator').innerHTML = [
+  [sensorTile().replace('</svg>', '') + '</svg>', '6 entities', 'Dots on the bezel arc.'],
+  [toggleTile({ name: 'Kitchen Switch', on: false, ic: 'toggle', n: 12, idx: 7 }), '12 entities', 'Still dots: 12 span 77 degrees (the limit).'],
+  [toggleTile({ name: 'Kitchen Switch', on: false, ic: 'toggle', n: 14, idx: 2 }), '14 entities', 'Caption <code>3 / 14</code>.']
+].map(([i, t, s]) => fig(device(i), t, s)).join('');
+
+$('states').innerHTML = [
+  [unavailableTile(), 'Unavailable', 'Red outline and caption; tile still scrolls.'],
+  [toastTile(), 'Toast', 'Pill on the bottom chord, replaces the dots while visible.'],
+  [wifiOverlay(), 'WiFi overlay', 'Black, thin spinner, one line of text.'],
+  [errorTile(), 'No connection', 'Shown when HA cannot be reached.']
+].map(([i, t, s]) => fig(device(i), t, s)).join('');
+
+$('dim').innerHTML = [
+  [toggleTile({ name: 'Desk Lamp', on: true }), 'Light, idle', 'About 28% brightness.'],
+  [thermoTile({}), 'Thermostat, idle', 'Same layout, dimmed.']
+].map(([i, t, s]) => fig(device(i, { dim: true }), t, s)).join('');
+
+const sw = [
+  ['bg', 'Background', C.bg], ['surface', 'Surface', C.surface], ['text', 'Text', C.text], ['text-dim', 'Text dim', C.dim],
+  ['inactive', 'Inactive', C.inactive], ['light', 'Light / switch / fan', C.light], ['heat', 'Heating', C.heat],
+  ['cool', 'Cooling', C.cool], ['cover', 'Cover', C.cover], ['ok', 'Sensor / OK', C.ok], ['error', 'Error', C.error]
+];
+$('swatches').innerHTML = sw.map(([k, n, v]) =>
+  `<div class="sw"><i style="background:${v}"></i><span>${n}<code>${v}</code></span></div>`).join('');
+</script>
+</body>
+</html>
