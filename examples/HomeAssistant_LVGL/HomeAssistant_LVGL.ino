@@ -1085,6 +1085,16 @@ static void navigateTiles(int detents) {
     updateIndicatorDots();
 }
 
+#if ENABLE_SCREENSHOT_SERVER
+// Called from the screenshot server's /tile route (main task)
+void debugGoToTile(int index, bool edit) {
+    if (index < 0 || index >= ENTITY_COUNT) return;
+    exitEditMode();
+    navigateTiles(index - currentTileIndex);
+    if (edit && isAdjustable(entities[index].type)) enterEditMode();
+}
+#endif
+
 static void adjustCurrentValue(int detents) {
     HAEntity& entity = entities[currentTileIndex];
     switch (entity.type) {

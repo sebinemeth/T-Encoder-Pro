@@ -111,9 +111,19 @@ static void handleScreenshot() {
     free(out);
 }
 
+static void handleTile() {
+    if (!server.hasArg("i")) {
+        server.send(400, "text/plain", "missing i");
+        return;
+    }
+    debugGoToTile(server.arg("i").toInt(), server.arg("edit") == "1");
+    server.send(200, "text/plain", "ok");
+}
+
 void screenshotBegin() {
     if (started) return;
     server.on("/screenshot.bmp", HTTP_GET, handleScreenshot);
+    server.on("/tile", HTTP_GET, handleTile);
     server.begin();
     started = true;
     Serial.printf("Screenshot: http://%s/screenshot.bmp\n", WiFi.localIP().toString().c_str());
