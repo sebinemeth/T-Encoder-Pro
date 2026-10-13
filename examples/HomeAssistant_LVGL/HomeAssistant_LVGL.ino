@@ -176,8 +176,8 @@ void setCoverPosition(int entityIndex, int value, bool fromTouch) {
     HAEntity& entity = entities[entityIndex];
     value = constrain(value, 0, 100);
     entity.position = value;
-    if (!fromTouch && entity.wControl) lv_slider_set_value(entity.wControl, value, LV_ANIM_OFF);
-    if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
+    uiSetCoverTarget(entityIndex, value);
+    uiSyncControl(entityIndex);
     handleEntityAction(entityIndex, "cover_set_position", String(value), valueCommandDebounce);
 }
 
@@ -185,8 +185,7 @@ void setFanSpeed(int entityIndex, int value, bool fromTouch) {
     HAEntity& entity = entities[entityIndex];
     value = constrain(value, 0, 100);
     entity.fanSpeed = value;
-    if (!fromTouch && entity.wControl) lv_slider_set_value(entity.wControl, value, LV_ANIM_OFF);
-    if (entity.wValue) lv_label_set_text_fmt(entity.wValue, "%d%%", value);
+    uiSyncControl(entityIndex);
     handleEntityAction(entityIndex, "fan_set_speed", String(value), valueCommandDebounce);
 }
 
@@ -194,8 +193,7 @@ void setTargetTemp(int entityIndex, float temp) {
     HAEntity& entity = entities[entityIndex];
     temp = constrain(snapToStep(temp, thermostatStep), entity.minTemp, entity.maxTemp);
     entity.targetTemp = temp;
-    if (entity.wTarget) lv_label_set_text_fmt(entity.wTarget, "Target: %.1f°C", temp);
-    if (entity.wControl) lv_arc_set_value(entity.wControl, tempToArcValue(temp, entity.minTemp, entity.maxTemp));
+    uiSyncControl(entityIndex);
     handleEntityAction(entityIndex, "set_temperature", String(temp, 1), valueCommandDebounce);
 }
 
@@ -444,15 +442,6 @@ static bool isAdjustable(EntityType type) {
     return type == ENTITY_COVER || type == ENTITY_THERMOSTAT || type == ENTITY_FAN;
 }
 
-// Outline the control's knob while editing so it is obvious the knob changes the value
-static void setEditHighlight(int entityIndex, bool on) {
-    lv_obj_t* ctrl = entities[entityIndex].wControl;
-    if (!ctrl) return;
-    lv_obj_set_style_outline_width(ctrl, on ? 4 : 0, LV_PART_KNOB);
-    lv_obj_set_style_outline_color(ctrl, lv_color_white(), LV_PART_KNOB);
-    lv_obj_set_style_outline_pad(ctrl, 2, LV_PART_KNOB);
-}
-
 static void enterEditMode() {
     editMode = true;
     editLastActivity = millis();
@@ -460,14 +449,14 @@ static void enterEditMode() {
     editValue = entity.type == ENTITY_COVER ? entity.position
               : entity.type == ENTITY_FAN ? entity.fanSpeed
               : entity.targetTemp;
-    setEditHighlight(currentTileIndex, true);
+    uiSetEditMode(currentTileIndex, true);
     Serial.println("Edit mode: " + entities[currentTileIndex].name);
 }
 
 void exitEditMode() {
     if (!editMode) return;
     editMode = false;
-    for (int i = 0; i < ENTITY_COUNT; i++) setEditHighlight(i, false);
+    for (int i = 0; i < ENTITY_COUNT; i++) uiSetEditMode(i, false);
     Serial.println("Edit mode off");
 }
 

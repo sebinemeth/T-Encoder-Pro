@@ -55,6 +55,7 @@
 // (glyph set "0123456789.-+ %/°", anything else must fall back to 26); MDI subset for icons.
 LV_FONT_DECLARE(ui_font_digits_56)
 LV_FONT_DECLARE(ui_font_digits_64)
+LV_FONT_DECLARE(ui_font_mdi_26)   // cover buttons: chevrons and stop only
 LV_FONT_DECLARE(ui_font_mdi_36)   // tile header / sensor icons
 LV_FONT_DECLARE(ui_font_mdi_64)   // disc icon
 
@@ -63,6 +64,7 @@ LV_FONT_DECLARE(ui_font_mdi_64)   // disc icon
 #define UI_FONT_SECOND   (&lv_font_montserrat_26)
 #define UI_FONT_HERO     (&ui_font_digits_56)
 #define UI_FONT_HERO_BIG (&ui_font_digits_64)
+#define UI_FONT_ICON_XS  (&ui_font_mdi_26)
 #define UI_FONT_ICON_S   (&ui_font_mdi_36)
 #define UI_FONT_ICON_L   (&ui_font_mdi_64)
 

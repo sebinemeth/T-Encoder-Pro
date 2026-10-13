@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 64 px
  * Bpp: 4
- * Opts: --font libraries/lvgl-8.3.5/scripts/built_in_font/Montserrat-Medium.ttf --size 64 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -r 0x20,0x25,0x2B,0x2D,0x2E,0x2F,0x30-0x39,0xB0 -o ui/fonts/ui_font_digits_64.c --lv-font-name ui_font_digits_64
+ * Opts: --font libraries/lvgl-8.3.5/scripts/built_in_font/Montserrat-Medium.ttf --size 64 --bpp 4 --no-compress --format lvgl --lv-include lvgl.h -r 0x20,0x25,0x2B,0x2D,0x2E,0x2F,0x30-0x39,0xB0 -o examples/HomeAssistant_LVGL/ui/fonts/ui_font_digits_64.c --lv-font-name ui_font_digits_64
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

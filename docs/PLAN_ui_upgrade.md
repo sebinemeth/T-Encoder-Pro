@@ -1,6 +1,6 @@
 # Plan: UI upgrade (dark, AMOLED-first, Home Assistant-like but minimal)
 
-Status: mockups approved. Phase 0, 1, 1b and 2 done (1b: 80 MHz bus, one 78-row draw buffer, REST sync one entity per loop; swap went from 7-8 fps to 28-41 fps, longest loop stall 130-155 ms to 32-41 ms) (LVGL heap after UI: 35516 of 49152 bytes free, biggest block 35516, measured after Phase 1; no pre-Phase-1 baseline was recorded).
+Status: mockups approved. Phase 0, 1, 1b, 2 and 3 done (3: ring tiles swap at 20-26 fps, longest loop stall 59 ms, LVGL heap 32.6K free with 6 tiles) (1b: 80 MHz bus, one 78-row draw buffer, REST sync one entity per loop; swap went from 7-8 fps to 28-41 fps, longest loop stall 130-155 ms to 32-41 ms) (LVGL heap after UI: 35516 of 49152 bytes free, biggest block 35516, measured after Phase 1; no pre-Phase-1 baseline was recorded).
 
 Related plans: [PLAN_light_brightness.md](PLAN_light_brightness.md) (after Phase 3), [PLAN_runtime_config.md](PLAN_runtime_config.md) (independent, see "Start here").
 

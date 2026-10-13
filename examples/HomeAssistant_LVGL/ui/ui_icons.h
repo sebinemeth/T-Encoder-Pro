@@ -30,6 +30,9 @@ static const UiIcon UI_ICONS[] = {
     {"door", "\xF3\xB0\xA0\x9A"},  // U+F081A
     {"radiobox-marked", "\xF3\xB0\x90\xBE"},  // U+F043E
     {"home-automation", "\xF3\xB0\x9F\x91"},  // U+F07D1
+    {"chevron-up", "\xF3\xB0\x85\x83"},  // U+F0143
+    {"chevron-down", "\xF3\xB0\x85\x80"},  // U+F0140
+    {"stop", "\xF3\xB0\x93\x9B"},  // U+F04DB
 };
 
 #define UI_ICON_FALLBACK "\xF3\xB0\x8B\x97"  // mdi:help-circle (U+F02D7)
