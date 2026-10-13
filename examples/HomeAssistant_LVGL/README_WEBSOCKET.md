@@ -50,6 +50,7 @@ enum WebSocketState {
 ```ini
 lib_deps = 
     bblanchon/ArduinoJson@^6.21.3
+    links2004/WebSockets@^2.4.1
 ```
 
 ### WebSocket Settings (`ha_websocket_config.h`)
